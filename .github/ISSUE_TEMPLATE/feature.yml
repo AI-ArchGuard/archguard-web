@@ -1,0 +1,10 @@
+name: Feature request
+description: Propose a scoped user-facing change
+title: "feat: "
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: User outcome
+    validations:
+      required: true
