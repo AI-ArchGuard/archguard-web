@@ -13,6 +13,7 @@ ArchGuard 治理平台的独立 React 客户端。首版提供 OIDC Authorizatio
 
 ```bash
 npm ci
+npm run check:api
 npm run check
 npm run test:e2e
 ```
