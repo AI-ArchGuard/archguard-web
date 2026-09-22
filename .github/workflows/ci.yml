@@ -23,6 +23,26 @@ jobs:
       - run: npm run check:api
       - run: npm run check
       - run: npm audit --audit-level=high
+      - name: Verify production container serves the application
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --tag archguard/web:ci .
+          docker run --detach --name archguard-web-ci \
+            --add-host archguard-platform:127.0.0.1 \
+            --add-host keycloak:127.0.0.1 \
+            --publish 127.0.0.1:18080:8080 \
+            archguard/web:ci
+          trap 'docker rm --force archguard-web-ci' EXIT
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent --show-error http://127.0.0.1:18080/ >/dev/null \
+              && curl --fail --silent --show-error 'http://127.0.0.1:18080/auth/callback?smoke=1' >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs archguard-web-ci
+          exit 1
   secret-scan:
     runs-on: ubuntu-latest
     steps:

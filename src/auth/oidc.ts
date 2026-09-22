@@ -6,7 +6,7 @@ const settings: UserManagerSettings = {
   redirect_uri: import.meta.env.VITE_OIDC_REDIRECT_URI ?? `${window.location.origin}/auth/callback`,
   post_logout_redirect_uri: import.meta.env.VITE_OIDC_POST_LOGOUT_REDIRECT_URI ?? `${window.location.origin}/`,
   response_type: 'code',
-  scope: 'openid profile project:create',
+  scope: 'openid project:create',
   userStore: new WebStorageStateStore({ store: window.sessionStorage }),
   stateStore: new WebStorageStateStore({ store: window.sessionStorage }),
   monitorSession: false,
