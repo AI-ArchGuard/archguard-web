@@ -1,0 +1,42 @@
+name: Web Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Verify release candidate
+        run: |
+          npm ci
+          npm run check:api
+          npm run check
+          npm audit --audit-level=high
+          tar -C dist -czf archguard-web-dist.tar.gz .
+          sha256sum archguard-web-dist.tar.gz > archguard-web-dist.tar.gz.sha256
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            archguard-web-dist.tar.gz \
+            archguard-web-dist.tar.gz.sha256 \
+            --verify-tag \
+            --title "ArchGuard Web $GITHUB_REF_NAME" \
+            --generate-notes
