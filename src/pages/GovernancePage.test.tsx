@@ -25,7 +25,7 @@ vi.mock('../hooks/useApi', () => ({
   },
 }))
 
-const gate = { id: 'gate-1', outcome: 'FAIL', ciExitCode: 2, blockedCount: 1, newCount: 1, existingCount: 1, resolvedCount: 1,
+const gate = { id: 'gate-1', targetBranch: 'main', ruleSetVersionId: 'version-1', outcome: 'FAIL', ciExitCode: 2, blockedCount: 1, newCount: 1, existingCount: 1, resolvedCount: 1,
   evaluatedAt: '2026-09-26T00:00:00Z', comparisonId: 'comparison-1' }
 
 function showPage() {
