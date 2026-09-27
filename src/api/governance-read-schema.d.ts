@@ -36,6 +36,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/repositories/{repositoryId}/github/pull-requests/{externalId}/revision-delta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Informational previous signed PR head to current head comparison; does not affect the baseline gate. */
+        get: operations["getPrRevisionDelta"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/repositories/{repositoryId}/github/pull-requests": {
         parameters: {
             query?: never;
@@ -125,6 +142,25 @@ export interface components {
             ruleVersion: string;
             severity: string;
             scannerFindingId: string;
+        };
+        PrRevisionDelta: {
+            /** @constant */
+            reference: "PR_PREVIOUS_REVISION";
+            /** @enum {string} */
+            availability: "AVAILABLE" | "NO_PREVIOUS_REVISION" | "CURRENT_REPORT_MISSING" | "PREVIOUS_REPORT_MISSING" | "INCOMPATIBLE";
+            currentHeadSha: string;
+            previousHeadSha?: string | null;
+            /** Format: uuid */
+            currentGateEvaluationId?: string | null;
+            /** Format: uuid */
+            previousGateEvaluationId?: string | null;
+            /** Format: uuid */
+            ruleSetVersionId: string;
+            fingerprintVersion?: string | null;
+            findings: components["schemas"]["ClassifiedFinding"][];
+            newCount: number;
+            existingCount: number;
+            resolvedCount: number;
         };
         PullRequest: {
             /** Format: uuid */
@@ -224,6 +260,34 @@ export interface operations {
                     "application/json": components["schemas"]["Comparison"];
                 };
             };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getPrRevisionDelta: {
+        parameters: {
+            query: {
+                ruleSetVersionId: components["parameters"]["RuleSetVersionId"];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                repositoryId: components["parameters"]["RepositoryId"];
+                externalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Difference or explicit unavailability reason */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrRevisionDelta"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
         };
     };
