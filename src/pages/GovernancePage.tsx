@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiClientError } from '../api/client'
-import type { BaselineVersion, Comparison, GateEvaluation, GatePage, PolicyException, PullRequestPage } from '../api/governance'
+import type { BaselineVersion, Comparison, GateEvaluation, GatePage, PolicyException, PrRevisionDelta, PullRequestPage } from '../api/governance'
 import type { Repository, RuleSet, RuleSetVersion } from '../api/types'
 import { Empty, Failure, Loading } from '../components/States'
 import { useApi } from '../hooks/useApi'
@@ -38,6 +38,9 @@ export function GovernancePage() {
   `current-gate:${root}:${selectedPr?.currentGateEvaluationId ?? ''}`)
   const scope = new URLSearchParams({ targetBranch: branch, ruleSetVersionId })
   const scoped = ruleSetVersionId.length > 0
+  const revisionDelta = useApi(() => scoped && selectedPr?.targetBranch === branch
+    ? api<PrRevisionDelta>(`${root}/github/pull-requests/${selectedPr.externalId}/revision-delta?${new URLSearchParams({ ruleSetVersionId })}`)
+    : Promise.resolve(undefined), `revision-delta:${root}:${selectedPr?.externalId ?? ''}:${selectedPr?.headSha ?? ''}:${branch}:${ruleSetVersionId}`)
   const baseline = useApi(() => scoped ? api<BaselineVersion[]>(`${root}/baselines?${scope}`) : Promise.resolve([]), `baseline:${root}:${scope}`)
   const exceptions = useApi(() => scoped ? api<PolicyException[]>(`${root}/policy-exceptions?${scope}`) : Promise.resolve([]), `exceptions:${root}:${scope}`)
   const gateQuery = new URLSearchParams({ targetBranch: branch, ruleSetVersionId, page: String(gatePage), size: '10' })
@@ -68,8 +71,20 @@ export function GovernancePage() {
     </QueryState></section>
       <section><h2>当前提交</h2>{!selectedPr ? <Empty>选择一个 PR 查看当前 head 与门禁。</Empty> : <div className="panel"><p className="mono">PR #{selectedPr.externalId} · {shortSha(selectedPr.headSha)}</p>
         {selectedPr.currentGateEvaluationId ? <QueryState loading={currentGate.loading} error={currentGate.error} retry={currentGate.reload} empty={!currentGate.data}>
-          {currentGate.data && <><strong className={`badge gate-${currentGate.data.outcome.toLowerCase()}`}>{currentGate.data.outcome}</strong><p>CI 退出码 {currentGate.data.ciExitCode} · 阻断 {currentGate.data.blockedCount} · {timestamp(currentGate.data.evaluatedAt)}</p><p>新增 {currentGate.data.newCount} · 存量 {currentGate.data.existingCount} · 已解决 {currentGate.data.resolvedCount}</p><small>目标分支 {currentGate.data.targetBranch} · 规则版本 <span className="mono">{currentGate.data.ruleSetVersionId}</span></small>{scoped && (currentGate.data.targetBranch !== branch || currentGate.data.ruleSetVersionId !== ruleSetVersionId) && <p className="state">当前门禁属于另一查看范围；下方历史仍按所选范围查询。</p>}</>}
+          {currentGate.data && <><strong className={`badge gate-${currentGate.data.outcome.toLowerCase()}`}>{currentGate.data.outcome}</strong><p>CI 退出码 {currentGate.data.ciExitCode} · 阻断 {currentGate.data.blockedCount} · {timestamp(currentGate.data.evaluatedAt)}</p><p>相对基线：新增 {currentGate.data.newCount} · 存量 {currentGate.data.existingCount} · 已解决 {currentGate.data.resolvedCount}</p><small>目标分支 {currentGate.data.targetBranch} · 规则版本 <span className="mono">{currentGate.data.ruleSetVersionId}</span></small>{scoped && (currentGate.data.targetBranch !== branch || currentGate.data.ruleSetVersionId !== ruleSetVersionId) && <p className="state">当前门禁属于另一查看范围；下方历史仍按所选范围查询。</p>}</>}
         </QueryState> : <Empty>当前 head 尚无门禁结果；旧提交的 PASS 不代表当前状态。</Empty>}</div>}</section></div>
+    <section><h2>PR 修订差异</h2><p className="muted">相对上一 PR 修订；仅用于解释 PR 内变化，不参与基线门禁和 CI 退出码。</p>
+      {!scoped ? <Empty>先选择规则版本。</Empty> : !selectedPr ? <Empty>选择一个 PR 查看修订变化。</Empty> : selectedPr.targetBranch !== branch ? <Empty>所选 PR 的目标分支与查看范围不同。</Empty>
+        : <QueryState loading={revisionDelta.loading} error={revisionDelta.error} retry={revisionDelta.reload} empty={!revisionDelta.data}>
+          {revisionDelta.data?.availability === 'AVAILABLE' ? <div className="panel"><p className="mono">{shortSha(revisionDelta.data.previousHeadSha!)} → {shortSha(revisionDelta.data.currentHeadSha)}</p>
+            <p>相对上一 PR 修订：新增 {revisionDelta.data.newCount} · 存量 {revisionDelta.data.existingCount} · 已解决 {revisionDelta.data.resolvedCount}</p>
+            <div className="list">{revisionDelta.data.findings.map((finding) => <article className="finding" key={`${finding.classification}:${finding.fingerprint}`}><header><span className={`severity ${finding.severity.toLowerCase()}`}>{finding.severity}</span><strong>{finding.ruleId}</strong><span className="badge">{finding.classification}</span></header><small className="mono">逻辑指纹 {finding.fingerprint}</small></article>)}</div>
+          </div> : <Empty>{revisionDelta.data?.availability === 'NO_PREVIOUS_REVISION' ? '尚无前一个已验证的不同 PR 修订。'
+            : revisionDelta.data?.availability === 'CURRENT_REPORT_MISSING' ? '当前修订尚无完成的报告和比较。'
+              : revisionDelta.data?.availability === 'PREVIOUS_REPORT_MISSING' ? '上一修订尚无完成的报告和比较。'
+                : '两个修订的规则或指纹版本不兼容。'}</Empty>}
+        </QueryState>}
+    </section>
     <div className="split"><section><h2>不可变基线</h2>{!scoped ? <Empty>先选择规则版本。</Empty> : <QueryState loading={baseline.loading} error={baseline.error} retry={baseline.reload} empty={!baseline.data?.length}>
       <div className="list">{baseline.data?.map((item) => <div className="row" key={item.id}><div><strong>版本 {item.version} {item.active && <span className="badge succeeded">当前</span>}</strong><small className="mono">{shortSha(item.commitSha)} · {item.id}</small></div><small>{timestamp(item.createdAt)}</small></div>)}</div>
     </QueryState>}</section><section><h2>跨扫描例外</h2>{!scoped ? <Empty>先选择规则版本。</Empty> : <QueryState loading={exceptions.loading} error={exceptions.error} retry={exceptions.reload} empty={!exceptions.data?.length}>
@@ -80,7 +95,7 @@ export function GovernancePage() {
       <div className="list">{history.data?.items.map((gate) => <button className={`row selectable ${selectedGateId === gate.id ? 'selected' : ''}`} key={gate.id} onClick={() => setSelectedGateId(gate.id)}><span className={`badge gate-${gate.outcome.toLowerCase()}`}>{gate.outcome}</span><span>{timestamp(gate.evaluatedAt)}</span><span>新增 {gate.newCount} · 存量 {gate.existingCount} · 已解决 {gate.resolvedCount}</span><progress aria-label={`新增趋势 ${gate.newCount}`} value={gate.newCount} max={maxNew} /></button>)}</div>
       <div className="pager"><button className="quiet" disabled={gatePage === 0} onClick={() => { setGatePage(gatePage - 1); setSelectedGateId('') }}>上一页</button><span>第 {gatePage + 1} 页</span><button className="quiet" disabled={!history.data?.hasMore} onClick={() => { setGatePage(gatePage + 1); setSelectedGateId('') }}>下一页</button></div>
     </QueryState>}</section>
-    <section><h2>Finding 分类</h2>{!selectedGate ? <Empty>选择一条门禁历史或有当前结果的 PR。</Empty> : !selectedGate.comparisonId ? <Empty>该门禁没有可展示的比较结果。</Empty> : <QueryState loading={comparison.loading} error={comparison.error} retry={comparison.reload} empty={!comparison.data?.findings.length}>
+    <section><h2>Finding 分类（相对基线）</h2>{!selectedGate ? <Empty>选择一条门禁历史或有当前结果的 PR。</Empty> : !selectedGate.comparisonId ? <Empty>该门禁没有可展示的比较结果。</Empty> : <QueryState loading={comparison.loading} error={comparison.error} retry={comparison.reload} empty={!comparison.data?.findings.length}>
       <div className="summary"><div><small>新增</small><strong>{comparison.data?.newCount}</strong></div><div><small>存量</small><strong>{comparison.data?.existingCount}</strong></div><div><small>已解决</small><strong>{comparison.data?.resolvedCount}</strong></div><div><small>基线版本</small><strong className="mono">{comparison.data?.baselineVersionId.slice(0, 8)}</strong></div></div>
       {(['NEW', 'EXISTING', 'RESOLVED'] as const).map((kind) => <div key={kind}><h3>{kind}</h3>{comparison.data?.findings.filter((finding) => finding.classification === kind).map((finding) => <article className="finding" key={`${kind}:${finding.fingerprint}`}><header><span className={`severity ${finding.severity.toLowerCase()}`}>{finding.severity}</span><strong>{finding.ruleId}</strong><span className="badge">{kind}</span></header><small className="mono">逻辑指纹 {finding.fingerprint}</small></article>) ?? null}{!comparison.data?.findings.some((finding) => finding.classification === kind) && <Empty>此分类没有 Finding。</Empty>}</div>)}
     </QueryState>}</section>
