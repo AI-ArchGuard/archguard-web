@@ -8,6 +8,7 @@ import { ProjectPage } from './pages/ProjectPage'
 import { RuleSetsPage } from './pages/RuleSetsPage'
 import { ScanResultPage } from './pages/ScanResultPage'
 import { GovernancePage } from './pages/GovernancePage'
+import { AgentDocumentsPage } from './pages/AgentDocumentsPage'
 
 function LoginPage() {
   const { login, user } = useAuth()
@@ -40,6 +41,7 @@ export function App() {
       <Route path="/projects/:projectId/repositories/:repositoryId/rules" element={<RuleSetsPage />} />
       <Route path="/projects/:projectId/repositories/:repositoryId/governance" element={<GovernancePage />} />
       <Route path="/projects/:projectId/scan-jobs/:jobId" element={<ScanResultPage />} />
+      <Route path="/projects/:projectId/agent/documents" element={<AgentDocumentsPage />} />
     </Route>
     <Route path="*" element={<Navigate to="/projects" replace />} />
   </Routes>
