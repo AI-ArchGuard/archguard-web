@@ -94,6 +94,11 @@ export interface components {
             eventAt: string;
             /** Format: uuid */
             currentGateEvaluationId?: string;
+            /**
+             * Format: uuid
+             * @description Exact applied revision for this head, or null/absent when trusted history is missing.
+             */
+            currentHeadRevisionId?: string | null;
         };
         WebhookResult: {
             /** Format: uuid */

@@ -1,7 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { AgentRequest } from '../api/agent'
 import { AgentRequestView } from './AgentRequestView'
+const apiMock = vi.hoisted(() => vi.fn())
+vi.mock('../api/client', async (load) => ({ ...await load<typeof import('../api/client')>(), api: apiMock }))
 
 const base = { id: 'request-1', projectId: 'project-1', traceId: 'trace-1', purpose: 'FINDING_EXPLANATION',
   bindings: { scanJobId: 'job-1', reportSha256: 'a'.repeat(64), prHeadRevisionId: null,
@@ -45,4 +47,20 @@ it('does not offer a cross-Project citation as a verified Evidence link', () => 
     }] } } as AgentRequest)
   expect(screen.queryByRole('button', { name: /核对 Evidence/ })).not.toBeInTheDocument()
   expect(screen.getByText(/引用尚不可在此页验证/)).toBeInTheDocument()
+})
+
+it.each([true, false])('resolves only the bound immutable document digest (matching=%s)', async (matching) => {
+  apiMock.mockReset().mockResolvedValue({ id: 'version-1', projectId: 'project-1', documentKey: 'architecture',
+    versionNumber: 1, contentSha256: matching ? 'c'.repeat(64) : 'd'.repeat(64), content: '<script>untrusted</script>' })
+  show({ ...base, state: 'SUCCEEDED', failure: null, bindings: { ...base.bindings,
+    documentVersions: [{ documentVersionId: 'version-1', contentSha256: 'c'.repeat(64) }] },
+    result: { conclusion: 'Review', claims: [], ruleBasis: [], suggestions: [], evidenceCoverage: 'PARTIAL', citations: [{
+      citationId: 'document-citation', source: 'PROJECT_DOCUMENT', projectId: 'project-1', label: 'Architecture',
+      documentVersionId: 'version-1', contentSha256: 'c'.repeat(64), fragmentIndex: 0, fragmentSha256: 'e'.repeat(64),
+      evidenceId: null, scanJobId: null, reportSha256: null,
+    }] } } as AgentRequest)
+  fireEvent.click(screen.getByRole('button', { name: /核对文档版本/ }))
+  expect(apiMock).toHaveBeenCalledWith('/api/v1/projects/project-1/documents/versions/version-1')
+  if (matching) expect(await screen.findByText('<script>untrusted</script>')).toBeInTheDocument()
+  else { expect(await screen.findByText(/引用无法验证/)).toBeInTheDocument(); expect(screen.queryByText('<script>untrusted</script>')).not.toBeInTheDocument() }
 })

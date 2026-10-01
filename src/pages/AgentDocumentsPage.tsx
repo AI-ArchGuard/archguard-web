@@ -1,21 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { api, ApiClientError } from '../api/client'
 import type { DocumentPage, DocumentVersion, DocumentVersionPage } from '../api/agent'
-import type { ProjectMember } from '../api/types'
+import { ownRole } from '../api/projectRole'
 import { Empty, Failure, Loading } from '../components/States'
 import { useApi } from '../hooks/useApi'
-
-async function ownRole(projectId: string, actorId: string): Promise<ProjectMember['role'] | null> {
-  for (let page = 0; page < 100; page++) {
-    const members = await api<{ items: ProjectMember[]; total: number }>(`/api/v1/projects/${projectId}/members?page=${page}&size=100`)
-    const member = members.items.find((item) => item.actorId === actorId)
-    if (member) return member.role
-    if ((page + 1) * 100 >= members.total) return null
-  }
-  return null
-}
 
 function uploadMessage(error: unknown) {
   if (error instanceof ApiClientError) {
@@ -32,10 +22,14 @@ export function AgentDocumentsPage() {
   const { user } = useAuth()
   const actorId = user?.profile.sub ?? ''
   const role = useApi(() => actorId ? ownRole(projectId, actorId) : Promise.resolve(null), `role:${projectId}:${actorId}`)
-  const documents = useApi(() => api<DocumentPage>(`/api/v1/projects/${projectId}/documents?size=100`), `documents:${projectId}`)
+  const [documentPage, setDocumentPage] = useState(0)
+  const [versionPage, setVersionPage] = useState(0)
+  const documents = useApi(() => api<DocumentPage>(`/api/v1/projects/${projectId}/documents?page=${documentPage}&size=100`), `documents:${projectId}:${documentPage}`)
   const [documentId, setDocumentId] = useState('')
-  const versions = useApi(() => documentId ? api<DocumentVersionPage>(`/api/v1/projects/${projectId}/documents/${documentId}/versions?size=100`)
-    : Promise.resolve(undefined), `versions:${projectId}:${documentId}`)
+  const versions = useApi(() => documentId ? api<DocumentVersionPage>(`/api/v1/projects/${projectId}/documents/${documentId}/versions?page=${versionPage}&size=100`)
+    : Promise.resolve(undefined), `versions:${projectId}:${documentId}:${versionPage}`)
+  const versionRead = useRef(0)
+  const uploadAttempt = useRef<{ file: File; documentKey: string; key: string }>(undefined)
   const [version, setVersion] = useState<DocumentVersion>()
   const [versionError, setVersionError] = useState('')
   const [documentKey, setDocumentKey] = useState('')
@@ -49,14 +43,16 @@ export function AgentDocumentsPage() {
   }, [role.reload])
 
   async function showVersion(versionId: string) {
+    const read = ++versionRead.current
     setVersion(undefined); setVersionError('')
     try {
       const value = await api<DocumentVersion>(`/api/v1/projects/${projectId}/documents/${documentId}/versions/${versionId}`)
+      if (read !== versionRead.current) return
       if (value.id !== versionId || value.documentId !== documentId || value.projectId !== projectId) {
         setVersionError('文档版本无法验证。'); return
       }
       setVersion(value)
-    } catch { setVersionError('无权读取该文档版本，或版本已不可用。') }
+    } catch { if (read === versionRead.current) setVersionError('无权读取该文档版本，或版本已不可用。') }
   }
 
   async function upload(event: FormEvent) {
@@ -69,12 +65,16 @@ export function AgentDocumentsPage() {
     catch { setUploadError('文件必须是有效的 UTF-8 文本。'); return }
     const normalized = new File([file], file.name, { type: markdown ? 'text/markdown' : 'text/plain' })
     const body = new FormData(); body.set('documentKey', documentKey); body.set('file', normalized)
+    if (!uploadAttempt.current || uploadAttempt.current.file !== file || uploadAttempt.current.documentKey !== documentKey) {
+      uploadAttempt.current = { file, documentKey, key: crypto.randomUUID() }
+    }
     setUploading(true)
     try {
       const created = await api<DocumentVersion>(`/api/v1/projects/${projectId}/documents`, {
-        method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, body,
+        method: 'POST', headers: { 'Idempotency-Key': uploadAttempt.current.key }, body,
       })
       setUploadSuccess(`已创建 ${created.documentKey} 的不可变版本 ${created.versionNumber}。`)
+      uploadAttempt.current = undefined
       setFile(undefined); documents.reload(); if (documentId === created.documentId) versions.reload()
     } catch (error) { setUploadError(uploadMessage(error)) }
     finally { setUploading(false) }
@@ -97,12 +97,18 @@ export function AgentDocumentsPage() {
       </form>{uploadError && <p role="alert">{uploadError}</p>}{uploadSuccess && <p role="status">{uploadSuccess}</p>}</section>}
     <section><h2>已上传文档</h2>{!documents.data?.items.length
         ? <Empty>尚无显式上传的项目文档。</Empty> : <div className="list">{documents.data.items.map((item) =>
-          <button className="row selectable" key={item.id} onClick={() => { setDocumentId(item.id); setVersion(undefined) }}>
-            <strong>{item.documentKey}</strong><small>最新版本 {item.latestVersionNumber}</small></button>)}</div>}</section>
+          <button className="row selectable" key={item.id} onClick={() => { versionRead.current++; setDocumentId(item.id); setVersionPage(0); setVersion(undefined); setVersionError('') }}>
+            <strong>{item.documentKey}</strong><small>最新版本 {item.latestVersionNumber}</small></button>)}</div>}
+      <div className="pager"><button className="quiet" disabled={documentPage === 0} onClick={() => { versionRead.current++; setDocumentPage(documentPage - 1); setDocumentId(''); setVersion(undefined) }}>上一页文档</button>
+        <span>第 {documentPage + 1} 页</span><button className="quiet" disabled={(documentPage + 1) * 100 >= (documents.data?.total ?? 0)}
+          onClick={() => { versionRead.current++; setDocumentPage(documentPage + 1); setDocumentId(''); setVersion(undefined) }}>下一页文档</button></div></section>
     {documentId && <section><h2>版本历史</h2>{versions.loading ? <Loading /> : versions.error ? <Failure error={versions.error} retry={versions.reload} />
       : !versions.data?.items.length ? <Empty>没有可读取的版本。</Empty> : <div className="list">{versions.data.items.map((item) =>
         <button className="row selectable" key={item.id} onClick={() => void showVersion(item.id)}>
           <strong>版本 {item.versionNumber}</strong><small className="mono">SHA-256 {item.contentSha256.slice(0, 16)} · {item.byteSize} 字节</small></button>)}</div>}
+      <div className="pager"><button className="quiet" disabled={versions.loading || versionPage === 0} onClick={() => setVersionPage(versionPage - 1)}>上一页版本</button>
+        <span>第 {versionPage + 1} 页</span><button className="quiet" disabled={versions.loading || (versionPage + 1) * 100 >= (versions.data?.total ?? 0)}
+          onClick={() => setVersionPage(versionPage + 1)}>下一页版本</button></div>
       {versionError && <div className="state error" role="alert">{versionError}</div>}
       {version && <article className="panel"><h3>{version.documentKey} · 版本 {version.versionNumber}</h3>
         <small className="mono">{version.contentSha256}</small><pre className="document-content">{version.content}</pre></article>}</section>}

@@ -6,6 +6,10 @@ ArchGuard 治理平台的独立 React 客户端。提供 OIDC Authorization Code
 
 ## 安全边界
 
+阶段 4F 提供 Project 文档管理、单个 Finding 的按需解释和 Maintainer 显式选择 Finding 的 PR 摘要。请求绑定确切扫描/报告、已验证 PR 修订和不可变文档版本；页面显示异步状态、失败原因、证据覆盖、版本及 traceId。Evidence 和文档引用按当前 Project 权限重新读取，摘要和解释始终作为需人工复核的建议。
+
+生产模型默认关闭；当前只支持已验收的合成/不可用路径。真实 DeepSeek 外发继续受 Docs ADR-0011 的独立审批关卡约束。
+
 - 浏览器只访问 Web 反向代理暴露的 `/api` 与 `/auth`。
 - OIDC token 使用 `sessionStorage`，不进入 `localStorage`、URL、日志或错误正文。
 - API 类型由固定的 Platform OpenAPI 快照生成并随仓库审查；治理快照分别对应基线、门禁、GitHub 与 3F 读取接口。
@@ -27,3 +31,7 @@ npm run test:e2e
 先发布 Platform 3F 只读接口，再发布使用固定快照生成类型的 Web。回滚时先回滚 Web，再回滚 Platform；新页面不写入治理数据，不修改 Scanner Schema，也不改变 3E CI 提交流程。
 
 PR 修订差异需先部署 Platform V7 迁移与新接口，再部署本 Web 版本。回滚先隐藏 Web 新区块，再回退 Platform 应用；V7 追加历史保留，不执行降级迁移。旧 PR 缺少迁移前 head 历史时明确显示不可用。
+
+## 4F 兼容与回滚
+
+先发布 Platform 4C–4E 和 4F 只读补充（PR `currentHeadRevisionId`、按版本 ID 读取文档），核对 main CI，再发布本 Web 固定 OpenAPI v1 快照消费者。Agent Output Schema 保持 `0.1.0`，Scanner `v0.2.1` 和 Scanner Schema `0.1.0` 不变。旧 Platform 缺少可信修订时摘要入口明确不可用。回滚先关闭 Web Agent 入口与模型调用，再回退应用；保留 V7–V10、文档版本及历史请求，原 PASS/FAIL 和 CI 退出码保持不变。
