@@ -17,6 +17,15 @@ function show(request: AgentRequest) {
 }
 
 it.each([
+  ['QUEUED', '解释请求排队中'], ['RUNNING', '正在生成并校验建议'],
+])('announces the pending %s state without presenting a successful result', (state, label) => {
+  show({ ...base, state, failure: null, result: null } as AgentRequest)
+  expect(screen.getByRole('status')).toHaveTextContent(label)
+  expect(screen.queryByRole('heading', { name: '已校验的建议' })).not.toBeInTheDocument()
+  expect(screen.getByText(/trace-1/)).toBeInTheDocument()
+})
+
+it.each([
   ['MODEL_DISABLED', '模型调用已关闭'], ['MODEL_TIMEOUT', '模型调用超时'],
   ['OUTPUT_INVALID', '模型输出无效'], ['CITATION_INVALID', '引用未通过验证'],
   ['QUOTA_EXHAUSTED', '额度已耗尽'],
