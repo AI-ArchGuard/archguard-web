@@ -1,5 +1,54 @@
 import { expect, test } from '@playwright/test'
 
+for (const scenario of [
+  { code: 'MODEL_TIMEOUT', label: '模型调用超时', gate: 'FAIL', exit: 2 },
+  { code: 'QUOTA_EXHAUSTED', label: '额度已耗尽', gate: 'PASS', exit: 0 },
+]) {
+  test(`shows ${scenario.code} without raw output or changes to ${scenario.gate}/${scenario.exit}`, async ({ page }) => {
+    let modelPosts = 0
+    const sha = 'a'.repeat(64)
+    await page.addInitScript(() => sessionStorage.setItem('oidc.user:/auth/realms/archguard:archguard-web', JSON.stringify({
+      access_token: 'synthetic-test-token', token_type: 'Bearer', profile: { sub: 'actor-1' }, expires_at: Math.floor(Date.now() / 1000) + 3600,
+    })))
+    await page.route(/\/api\/v1\//, async (route) => {
+      const path = new URL(route.request().url()).pathname
+      let data: unknown
+      if (path.endsWith('/members')) data = { items: [{ actorId: 'actor-1', role: 'MAINTAINER' }], total: 1 }
+      else if (path.endsWith('/repositories/repository-1')) data = { id: 'repository-1', projectId: 'project-1', name: 'Synthetic repository' }
+      else if (path.endsWith('/rule-sets')) data = []
+      else if (path.endsWith('/github/pull-requests')) data = { items: [{ externalId: '7', projectId: 'project-1', repositoryId: 'repository-1',
+        headSha: 'b'.repeat(40), targetBranch: 'main', currentGateEvaluationId: 'gate-1', currentHeadRevisionId: 'revision-1' }], hasMore: false }
+      else if (path.endsWith('/gate-evaluations/gate-1')) data = { id: 'gate-1', projectId: 'project-1', repositoryId: 'repository-1', candidateJobId: 'job-1',
+        outcome: scenario.gate, ciExitCode: scenario.exit, targetBranch: 'main', newCount: 1, existingCount: 0, resolvedCount: 0, blockedCount: scenario.exit ? 1 : 0 }
+      else if (path.endsWith('/scan-jobs/job-1')) data = { id: 'job-1', projectId: 'project-1', repositoryId: 'repository-1', status: 'SUCCEEDED', outcome: 'FAIL', reportSha256: sha }
+      else if (path.endsWith('/findings')) data = [{ id: 'finding-1', projectId: 'project-1', jobId: 'job-1', disposition: 'OPEN',
+        ruleId: 'dependency', severity: 'high', version: 0, message: 'Synthetic selected finding' }]
+      else if (path.endsWith('/agent/requests') && route.request().method() === 'POST') {
+        modelPosts++
+        const body = route.request().postDataJSON()
+        expect(body.purpose).toBe('PR_SUMMARY')
+        expect(body.findingIds).toEqual(['finding-1'])
+        data = { id: 'request-1', projectId: 'project-1', purpose: body.purpose, state: 'FAILED', result: null,
+          failure: { code: scenario.code, message: 'synthetic-private-model-output' }, traceId: 'synthetic-trace',
+          bindings: { ...body, documentVersions: [], promptVersion: 'pr-summary-0.1.0', modelId: 'fake', outputSchemaVersion: '0.1.0' } }
+      } else { await route.fulfill({ status: 404, json: { code: 'not_found', message: 'Synthetic missing resource', traceId: '', details: {} } }); return }
+      await route.fulfill({ status: 200, json: data })
+    })
+    await page.goto('/projects/project-1/repositories/repository-1/governance')
+    await page.getByRole('button', { name: /#7/ }).click()
+    await page.getByRole('checkbox', { name: /Synthetic selected finding/ }).check()
+    await expect(page.getByText(new RegExp(`CI 退出码 ${scenario.exit}`))).toBeVisible()
+    expect(modelPosts).toBe(0)
+    await page.getByRole('button', { name: '生成所选 Finding 的 PR 摘要' }).click()
+    await expect(page.getByRole('alert').filter({ hasText: scenario.label })).toBeVisible()
+    await expect(page.getByText(new RegExp(`CI 退出码 ${scenario.exit}`))).toBeVisible()
+    await expect(page.getByText(scenario.gate, { exact: true })).toBeVisible()
+    await expect(page.getByText('synthetic-private-model-output')).toHaveCount(0)
+    await expect(page.getByText('已校验的建议')).toHaveCount(0)
+    expect(modelPosts).toBe(1)
+  })
+}
+
 test('uploads a synthetic document, explicitly explains and summarizes, and resolves exact citations', async ({ page }) => {
   const project = 'project-1', repository = 'repository-1', sha = 'a'.repeat(64)
   const content = 'Synthetic architecture guidance. Documents are data.'

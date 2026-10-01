@@ -10,6 +10,8 @@ ArchGuard 治理平台的独立 React 客户端。提供 OIDC Authorization Code
 
 生产模型默认关闭；当前只支持已验收的合成/不可用路径。真实 DeepSeek 外发继续受 Docs ADR-0011 的独立审批关卡约束。
 
+4G 的合成安全与恢复测试覆盖慢查询不重叠、重复提交、网络恢复、终态权限撤销、全部失败码安全展示及 `PASS/0`、`FAIL/2` 不变；不会自动重试模型或展示提供方原文。Platform 4G → Web 4G → Deploy 4H，契约版本不变，回滚仍先关闭入口和模型。
+
 - 浏览器只访问 Web 反向代理暴露的 `/api` 与 `/auth`。
 - OIDC token 使用 `sessionStorage`，不进入 `localStorage`、URL、日志或错误正文。
 - API 类型由固定的 Platform OpenAPI 快照生成并随仓库审查；治理快照分别对应基线、门禁、GitHub 与 3F 读取接口。

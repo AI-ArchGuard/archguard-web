@@ -21,10 +21,13 @@ export function useAgentRequest(projectId: string) {
   useEffect(() => {
     if (!request || !attempt.current) return
     let active = true
+    let polling = false
     const input = attempt.current.input
     const requestId = request.id
     const timer = window.setInterval(() => {
-      api<AgentRequest>(`${root}/${requestId}`).then((value) => {
+      if (polling) return
+      polling = true
+      api<AgentRequest>(`${root}/${requestId}`, { signal: AbortSignal.timeout(10000) }).then((value) => {
         if (!active) return
         if (value.id !== requestId || !matches(value, projectId, input)) {
           window.clearInterval(timer); setRequest(undefined); setError('建议结果范围或版本不匹配，已停止展示。'); return
@@ -36,7 +39,7 @@ export function useAgentRequest(projectId: string) {
         if (failure instanceof ApiClientError && [401, 403, 404].includes(failure.status)) {
           window.clearInterval(timer); setRequest(undefined); setError('Project 权限已失效，建议结果不再可查看。')
         } else { setError('无法更新建议状态，正在等待恢复。') }
-      })
+      }).finally(() => { polling = false })
     }, request.state === 'QUEUED' || request.state === 'RUNNING' ? 1500 : 30000)
     return () => { active = false; window.clearInterval(timer) }
   }, [request?.id, request?.state, projectId, root]) // eslint-disable-line react-hooks/exhaustive-deps
