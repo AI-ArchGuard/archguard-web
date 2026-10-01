@@ -6,6 +6,7 @@ import type { Repository, RuleSet, RuleSetVersion } from '../api/types'
 import { Empty, Failure, Loading } from '../components/States'
 import { useApi } from '../hooks/useApi'
 import { PrSummary } from '../components/PrSummary'
+import { agentEntryEnabled } from '../agentEntry'
 
 const timestamp = (value: string) => new Date(value).toLocaleString()
 const shortSha = (value: string) => value.slice(0, 12)
@@ -74,7 +75,7 @@ export function GovernancePage() {
         {selectedPr.currentGateEvaluationId ? <QueryState loading={currentGate.loading} error={currentGate.error} retry={currentGate.reload} empty={!currentGate.data}>
           {currentGate.data && <><strong className={`badge gate-${currentGate.data.outcome.toLowerCase()}`}>{currentGate.data.outcome}</strong><p>CI 退出码 {currentGate.data.ciExitCode} · 阻断 {currentGate.data.blockedCount} · {timestamp(currentGate.data.evaluatedAt)}</p><p>相对基线：新增 {currentGate.data.newCount} · 存量 {currentGate.data.existingCount} · 已解决 {currentGate.data.resolvedCount}</p><small>目标分支 {currentGate.data.targetBranch} · 规则版本 <span className="mono">{currentGate.data.ruleSetVersionId}</span></small>{scoped && (currentGate.data.targetBranch !== branch || currentGate.data.ruleSetVersionId !== ruleSetVersionId) && <p className="state">当前门禁属于另一查看范围；下方历史仍按所选范围查询。</p>}</>}
         </QueryState> : <Empty>当前 head 尚无门禁结果；旧提交的 PASS 不代表当前状态。</Empty>}</div>}</section></div>
-    {selectedPr && !currentGate.loading && !currentGate.error && <PrSummary
+    {agentEntryEnabled() && selectedPr && !currentGate.loading && !currentGate.error && <PrSummary
       key={`${projectId}:${repositoryId}:${selectedPr.externalId}:${selectedPr.headSha}:${selectedPr.currentHeadRevisionId}:${selectedPr.currentGateEvaluationId}`}
       projectId={projectId} repositoryId={repositoryId} pr={selectedPr} gate={currentGate.data} />}
     <section><h2>PR 修订差异</h2><p className="muted">相对上一 PR 修订；仅用于解释 PR 内变化，不参与基线门禁和 CI 退出码。</p>

@@ -36,4 +36,8 @@ PR 修订差异需先部署 Platform V7 迁移与新接口，再部署本 Web �
 
 ## 4F 兼容与回滚
 
+4H 增加构建时展示开关 `VITE_AGENT_UI_ENABLED`，只有精确 `true` 才挂载文档页、Finding 解释和 PR 摘要；缺失、`false` 或非法值都关闭。关闭后文档深链接显示明确状态，不挂载 Agent 查询/轮询组件，扫描与门禁继续可用。Docker 构建参数默认 `false`，合成验收需显式设为 `true`；改动开关必须重新构建并部署 Web，单独修改容器运行环境不会改变静态包。
+
+这不是权限或模型出口开关，不能阻止已加载旧页面或直接 API 调用。回滚部署关闭入口的 Web 包后，必须同时关闭 Platform `ARCHGUARD_AGENT_ENABLED`（真实外发还需 Project/Deployment 关卡），再回退旧应用。旧页面应刷新，历史解释/文档与已发布迁移保留。真实提供方和 Project 启用仍未交付、不因打开展示开关而获批准。
+
 先发布 Platform 4C–4E 和 4F 只读补充（PR `currentHeadRevisionId`、按版本 ID 读取文档），核对 main CI，再发布本 Web 固定 OpenAPI v1 快照消费者。Agent Output Schema 保持 `0.1.0`，Scanner `v0.2.1` 和 Scanner Schema `0.1.0` 不变。旧 Platform 缺少可信修订时摘要入口明确不可用。回滚先关闭 Web Agent 入口与模型调用，再回退应用；保留 V7–V10、文档版本及历史请求，原 PASS/FAIL 和 CI 退出码保持不变。
