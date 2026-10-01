@@ -40,3 +40,43 @@ it('rejects a polled result from a different scan version', async () => {
   expect(result.current.request).toBeUndefined()
   expect(result.current.error).toContain('版本不匹配')
 })
+
+it('does not overlap polls while a previous state read is pending', async () => {
+  let resolvePoll!: (value: AgentRequest) => void
+  apiMock.mockResolvedValue(queued).mockResolvedValueOnce(queued).mockImplementationOnce(() => new Promise<AgentRequest>((resolve) => { resolvePoll = resolve }))
+  const { result } = renderHook(() => useAgentRequest('project-1'))
+  await act(() => result.current.create(input))
+  await act(() => vi.advanceTimersByTimeAsync(4500))
+  expect(apiMock).toHaveBeenCalledTimes(2)
+  await act(async () => resolvePoll({ ...queued, state: 'FAILED' }))
+  expect(result.current.request?.state).toBe('FAILED')
+})
+
+it('blocks duplicate submits and recovers transient polling failures without another POST', async () => {
+  let resolveSubmit!: (value: AgentRequest) => void
+  apiMock.mockImplementationOnce(() => new Promise<AgentRequest>((resolve) => { resolveSubmit = resolve }))
+    .mockRejectedValueOnce(new Error('synthetic network failure'))
+    .mockResolvedValueOnce({ ...queued, state: 'FAILED' })
+  const { result } = renderHook(() => useAgentRequest('project-1'))
+  let pending!: Promise<void>
+  act(() => { pending = result.current.create(input); void result.current.create(input) })
+  expect(apiMock).toHaveBeenCalledTimes(1)
+  await act(async () => { resolveSubmit(queued); await pending })
+  await act(() => vi.advanceTimersByTimeAsync(1500))
+  expect(result.current.error).toContain('等待恢复')
+  await act(() => vi.advanceTimersByTimeAsync(1500))
+  expect(result.current.request?.state).toBe('FAILED')
+  expect(result.current.error).toBe('')
+  expect(apiMock.mock.calls.filter((call) => call[1]?.method === 'POST')).toHaveLength(1)
+})
+
+it.each([401, 403, 404])('clears a terminal result after authorization fails with %s', async (status) => {
+  apiMock.mockResolvedValueOnce({ ...queued, state: 'SUCCEEDED' }).mockRejectedValueOnce(new ApiClientError(status,
+    { code: 'project.not_found', message: 'synthetic private provider response', traceId: 'trace-1', details: {} }))
+  const { result } = renderHook(() => useAgentRequest('project-1'))
+  await act(() => result.current.create(input))
+  await act(() => vi.advanceTimersByTimeAsync(30000))
+  expect(result.current.request).toBeUndefined()
+  expect(result.current.error).toContain('权限已失效')
+  expect(result.current.error).not.toContain('private provider response')
+})

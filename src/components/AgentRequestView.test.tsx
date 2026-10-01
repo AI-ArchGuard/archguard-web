@@ -29,6 +29,8 @@ it.each([
   ['MODEL_DISABLED', '模型调用已关闭'], ['MODEL_TIMEOUT', '模型调用超时'],
   ['OUTPUT_INVALID', '模型输出无效'], ['CITATION_INVALID', '引用未通过验证'],
   ['QUOTA_EXHAUSTED', '额度已耗尽'],
+  ['MODEL_UNAVAILABLE', '模型当前不可用'], ['AUTHORIZATION_REVOKED', 'Project 授权已失效'],
+  ['INTERNAL_ERROR', 'Agent 请求失败'],
 ])('shows a stable unavailable reason for %s', (code, label) => {
   show({ ...base, state: 'FAILED', failure: { code, message: 'unsafe provider text' }, result: null } as AgentRequest)
   expect(screen.getByRole('alert')).toHaveTextContent(label)
