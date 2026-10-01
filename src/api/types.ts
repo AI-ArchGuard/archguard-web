@@ -4,6 +4,7 @@ import type { components } from './schema'
 type Schemas = components['schemas']
 export type UUID = string
 export type ProjectRole = Schemas['ProjectMemberRole']
+export type ProjectMember = Schemas['ProjectMember']
 export type Project = Schemas['Project']
 export type Repository = Schemas['Repository']
 export type RuleSet = Schemas['RuleSet']

@@ -175,6 +175,11 @@ export interface components {
             eventAt: string;
             /** Format: uuid */
             currentGateEvaluationId?: string | null;
+            /**
+             * Format: uuid
+             * @description Exact applied, signature-verified revision for this current head. Null/absent if trusted history is missing; never infer from arbitrary delivery IDs.
+             */
+            currentHeadRevisionId?: string | null;
         };
     };
     responses: {

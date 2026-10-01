@@ -4,6 +4,7 @@ import { ApiClientError } from '../api/client'
 import { GovernancePage } from './GovernancePage'
 
 const state = vi.hoisted(() => ({ current: true, forbidden: false, revisionAvailable: true }))
+vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ user: { profile: { sub: 'viewer' } } }) }))
 vi.mock('../hooks/useApi', () => ({
   useApi: (_loader: unknown, key: string) => {
     const common = { loading: false, error: undefined, reload: vi.fn() }
