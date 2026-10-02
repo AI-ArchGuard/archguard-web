@@ -9,6 +9,7 @@ import { RuleSetsPage } from './pages/RuleSetsPage'
 import { ScanResultPage } from './pages/ScanResultPage'
 import { GovernancePage } from './pages/GovernancePage'
 import { AgentDocumentsPage } from './pages/AgentDocumentsPage'
+import { agentEntryEnabled } from './agentEntry'
 
 function LoginPage() {
   const { login, user } = useAuth()
@@ -41,7 +42,8 @@ export function App() {
       <Route path="/projects/:projectId/repositories/:repositoryId/rules" element={<RuleSetsPage />} />
       <Route path="/projects/:projectId/repositories/:repositoryId/governance" element={<GovernancePage />} />
       <Route path="/projects/:projectId/scan-jobs/:jobId" element={<ScanResultPage />} />
-      <Route path="/projects/:projectId/agent/documents" element={<AgentDocumentsPage />} />
+      <Route path="/projects/:projectId/agent/documents" element={agentEntryEnabled() ? <AgentDocumentsPage />
+        : <main><h1>Agent 入口已关闭</h1><p>扫描与质量门禁继续可用；此开关不授权模型调用。</p></main>} />
     </Route>
     <Route path="*" element={<Navigate to="/projects" replace />} />
   </Routes>
