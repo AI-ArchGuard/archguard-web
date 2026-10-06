@@ -53,3 +53,7 @@ main { max-width: 78rem; margin: 0 auto; padding: 2.5rem 1.5rem 5rem; }
 .document-content { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflow: auto; border: 1px solid #dbe2e6; padding: 1rem; }
 .summary-finding { display: flex; align-items: center; gap: .6rem; }
 .summary-finding input { width: auto; }
+.credentials-page { max-width: 54rem; }
+.credentials-page .panel { margin-bottom: 1.5rem; }
+.credentials-page h2 { margin: 0; }
+.credentials-page form button, .credentials-page .danger { justify-self: start; }
