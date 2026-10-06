@@ -37,6 +37,14 @@ jobs:
           for attempt in $(seq 1 20); do
             if curl --fail --silent --show-error http://127.0.0.1:18080/ >/dev/null \
               && curl --fail --silent --show-error 'http://127.0.0.1:18080/auth/callback?smoke=1' >/dev/null; then
+              curl --fail --silent --show-error --dump-header /tmp/credential-headers \
+                http://127.0.0.1:18080/settings/model-credentials >/dev/null
+              grep -Fi 'Cache-Control: no-store' /tmp/credential-headers
+              grep -Fi 'Content-Security-Policy:' /tmp/credential-headers
+              credential_status=$(head -c 513 /dev/zero | tr '\0' 'a' | curl --silent --show-error \
+                --request PUT --header 'Content-Type: application/json' --data-binary @- \
+                --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18080/api/v1/agent/credentials/deepseek)
+              test "$credential_status" = 413
               exit 0
             fi
             sleep 1

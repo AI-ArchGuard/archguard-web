@@ -10,6 +10,8 @@ import { ScanResultPage } from './pages/ScanResultPage'
 import { GovernancePage } from './pages/GovernancePage'
 import { AgentDocumentsPage } from './pages/AgentDocumentsPage'
 import { agentEntryEnabled } from './agentEntry'
+import { credentialEntryEnabled } from './credentialEntry'
+import { CredentialSettingsPage } from './pages/CredentialSettingsPage'
 
 function LoginPage() {
   const { login, user } = useAuth()
@@ -38,6 +40,8 @@ export function App() {
     <Route path="/auth/callback" element={<CallbackPage />} />
     <Route element={<Protected />}>
       <Route path="/projects" element={<ProjectsPage />} />
+      <Route path="/settings/model-credentials" element={credentialEntryEnabled() ? <CredentialSettingsPage />
+        : <main><h1>凭据入口已关闭</h1><p>扫描与门禁继续可用；此开关不启用模型调用。</p></main>} />
       <Route path="/projects/:projectId" element={<ProjectPage />} />
       <Route path="/projects/:projectId/repositories/:repositoryId/rules" element={<RuleSetsPage />} />
       <Route path="/projects/:projectId/repositories/:repositoryId/governance" element={<GovernancePage />} />

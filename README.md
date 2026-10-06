@@ -10,6 +10,8 @@ ArchGuard 治理平台的独立 React 客户端。提供 OIDC Authorization Code
 
 生产模型默认关闭；当前只支持已验收的合成/不可用路径。真实 DeepSeek 外发继续受 Docs ADR-0011 的独立审批关卡约束。
 
+个人凭据入口按 Docs [ADR-0013](https://github.com/AI-ArchGuard/archguard-docs/blob/main/adr/0013-personal-write-only-credential-management.md)提供添加/替换/删除，读取只显示元数据，不回显 Key。先撤销在聊天等处暴露的 Key，之后仅在本机受控入口输入新 Key；不要贴回聊天。后端 AES-256-GCM 持久化依赖独立主密钥与受控目录，重启后保留；Web 本身不持久化 Key，操作不验证有效性、查询余额、启用 Agent 或发起模型请求。
+
 4G 的合成安全与恢复测试覆盖慢查询不重叠、重复提交、网络恢复、终态权限撤销、全部失败码安全展示及 `PASS/0`、`FAIL/2` 不变；不会自动重试模型或展示提供方原文。Platform 4G → Web 4G → Deploy 4H，契约版本不变，回滚仍先关闭入口和模型。
 
 - 浏览器只访问 Web 反向代理暴露的 `/api` 与 `/auth`。
@@ -27,6 +29,18 @@ npm run test:e2e
 ```
 
 本地开发前复制 `.env.example` 到未跟踪的 `.env.local` 并按环境调整公开 OIDC 地址。完整用户旅程由 `archguard-deploy` 的 Compose 入口提供。
+
+## 个人凭据兼容与运行限制
+
+Platform #50 已合并为 `710025d`，main CI 成功后本 Web 消费固定 [API 0.1.0](openapi/agent-credentials-v1.json)。`VITE_CREDENTIAL_UI_ENABLED`（Docker 同名 build arg）默认 false，只接受精确 true，独立于 Agent 展示/后台模型开关；启用后顶栏“模型凭据”进入 `/settings/model-credentials`。仅配置的后端 owner UUID 可管理，其他用户看到无权限；仅本机 local-compose 环回 Origin 支持，远程/多人范围不开放。
+
+无权限、管理关闭或存储错误时不展示输入框；未知写入结果提示手工刷新，不自动重试或显示旧状态。密码输入只短暂留在 DOM/请求内存，不进入 React Key 状态、URL、local/sessionStorage、缓存、错误正文或遥测；提交（包括失败）、离页/pagehide、身份切换和退出主动清空。浏览器扩展、密码管理器、XSS/已攻陷设备仍是风险，autocomplete=off 不是安全保证。删除只移除本地槽位，不撤销供应商 Key或擦除磁盘快照；须到 DeepSeek 账户撤销，历史解释/审计保留。
+
+专用客户端固定同源路由、no-store/不重定向、15 秒取消、最多 1 KiB 元数据，只接受三个字段和合法版本/时间，不解析服务端错误正文。退出先移除本地页面再进行 OIDC 重定向；取消不能撤回已经送达后端的变更。Nginx 全站 no-store/no-referrer/CSP 同源策略也覆盖 SPA 客户端进入页面，不能只保护深链接；凭据精确路由限制 512 字节并关闭代理请求/响应缓冲，不落代理临时文件。OIDC 必须沿现有 `/auth` 同源代理，不允许直连外部 issuer 的 fetch。
+
+部署仍待受控主密钥/目录挂载、owner/origin 配置；本 UI 不代表真实 Agent 已接通或阶段完成。兼容顺序 Docs → Platform producer → Web → Deploy；回滚关闭凭据 UI/管理/模型后退应用，保留主密钥、密文和历史。现有 Agent Output/Scanner Schema 不变，#43/4H/阶段 4 继续跟踪。
+
+安全补丁仅将已存在的间接依赖 source-map-js 锁定版本从 1.2.1 更新至 1.2.2（BSD-3-Clause），修复[官方发布列出的拒绝服务漏洞](https://github.com/7rulnik/source-map-js/releases/tag/v1.2.2)。未增加依赖或批量升级；保持旧版本无法通过当前 high 门槛，降低扫描门槛不是备选。
 
 ## 3H 兼容顺序
 

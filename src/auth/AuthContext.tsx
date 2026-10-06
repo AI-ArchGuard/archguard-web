@@ -24,7 +24,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return () => { active = false; userManager.events.removeUserLoaded(loaded); userManager.events.removeUserUnloaded(unloaded) }
   }, [])
   const value = useMemo<AuthState>(() => ({ user, loading,
-    login: () => userManager.signinRedirect(), logout: () => userManager.signoutRedirect() }), [user, loading])
+    login: () => userManager.signinRedirect(), logout: () => { setUser(null); return userManager.signoutRedirect() } }), [user, loading])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
