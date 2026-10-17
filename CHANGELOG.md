@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — controlled personal Agent entry
+
+- Pin Platform Settings/Batch API 0.3.0 and live API 0.1.0; add an independent default-off personal acceptance page without changing synthetic submissions or the existing write-only credential entry.
+- Keep explicit acknowledgement, Project control, batch approval and paid explanation/summary separate. Restore immutable request slots from authorized reads, preserve server ETags and never automatically retry, replace requests, contact the supplier from the browser or probe an account.
+- Deployment, conditional synthetic real acceptance, final rollback/recovery, release artifacts and the sole stage report remain separate gates; no stage-exit claim.
+
 ## [Unreleased]
 
 - ADR-0013：默认关闭的个人 DeepSeek 凭据添加/替换/删除页；固定只写 API、输入清空、元数据/失败安全展示，无真实模型调用。

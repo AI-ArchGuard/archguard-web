@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { AgentRequest } from '../api/agent'
+import { ApiClientError } from '../api/client'
 import { AgentRequestView } from './AgentRequestView'
 const apiMock = vi.hoisted(() => vi.fn())
 vi.mock('../api/client', async (load) => ({ ...await load<typeof import('../api/client')>(), api: apiMock }))
@@ -10,7 +11,7 @@ const base = { id: 'request-1', projectId: 'project-1', traceId: 'trace-1', purp
     findingIds: ['finding-1'], documentVersions: [], promptVersion: 'finding-explanation-0.1.0',
     modelProfileVersion: 'fake', modelProtocolVersion: 'responses-v1-restricted', modelId: 'fake',
     outputSchemaVersion: '0.1.0', priceCatalogVersion: 'synthetic', inputDigest: 'b'.repeat(64) },
-  usage: null, requesterId: 'actor-1', createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z' }
+  usage: null, requesterId: 'actor-1', createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z' } satisfies Omit<AgentRequest, 'state' | 'failure' | 'result'>
 
 function show(request: AgentRequest) {
   render(<MemoryRouter><AgentRequestView request={request} /></MemoryRouter>)
@@ -71,7 +72,95 @@ it.each([true, false])('resolves only the bound immutable document digest (match
       evidenceId: null, scanJobId: null, reportSha256: null,
     }] } } as AgentRequest)
   fireEvent.click(screen.getByRole('button', { name: /核对文档版本/ }))
-  expect(apiMock).toHaveBeenCalledWith('/api/v1/projects/project-1/documents/versions/version-1')
+  expect(apiMock).toHaveBeenCalledWith('/api/v1/projects/project-1/documents/versions/version-1', { signal: expect.any(AbortSignal) })
   if (matching) expect(await screen.findByText('<script>untrusted</script>')).toBeInTheDocument()
   else { expect(await screen.findByText(/引用无法验证/)).toBeInTheDocument(); expect(screen.queryByText('<script>untrusted</script>')).not.toBeInTheDocument() }
+})
+
+function citedRequest(source: 'PROJECT_DOCUMENT' | 'SCANNER_EVIDENCE' = 'PROJECT_DOCUMENT', projectId = 'project-1'): AgentRequest {
+  return { ...base, projectId, state: 'SUCCEEDED', failure: null,
+    bindings: { ...base.bindings, documentVersions: [{ documentVersionId: 'version-1', contentSha256: 'c'.repeat(64) }] },
+    result: { conclusion: 'Review', claims: [], ruleBasis: [], suggestions: [], evidenceCoverage: 'PARTIAL', citations: [{
+      citationId: 'citation-1', source, projectId, label: 'Architecture',
+      documentVersionId: source === 'PROJECT_DOCUMENT' ? 'version-1' : null,
+      contentSha256: source === 'PROJECT_DOCUMENT' ? 'c'.repeat(64) : null,
+      fragmentIndex: source === 'PROJECT_DOCUMENT' ? 0 : null, fragmentSha256: source === 'PROJECT_DOCUMENT' ? 'e'.repeat(64) : null,
+      evidenceId: source === 'SCANNER_EVIDENCE' ? 'evidence-1' : null,
+      scanJobId: source === 'SCANNER_EVIDENCE' ? 'job-1' : null,
+      reportSha256: source === 'SCANNER_EVIDENCE' ? 'a'.repeat(64) : null,
+    }] } }
+}
+function rejectedRead(status: number) {
+  return new ApiClientError(status, { code: 'opaque', message: 'unsafe provider text', traceId: '', details: {} })
+}
+
+it.each([401, 403, 404] as const)('forwards typed citation denial %s for document and Evidence reads', async status => {
+  for (const source of ['PROJECT_DOCUMENT', 'SCANNER_EVIDENCE'] as const) {
+    const denied = vi.fn()
+    apiMock.mockReset().mockRejectedValue(rejectedRead(status))
+    const view = render(<AgentRequestView request={citedRequest(source)} onDenied={denied} />)
+    fireEvent.click(screen.getByRole('button', { name: /核对/ }))
+    await waitFor(() => expect(denied).toHaveBeenCalledExactlyOnceWith(status))
+    expect(screen.queryByText('unsafe provider text')).not.toBeInTheDocument()
+    view.unmount()
+  }
+})
+
+it.each([new ApiClientError(500, { code: 'opaque', message: '403 denied', traceId: '', details: {} }),
+  new Error('401 denied'), { status: 403 }])('keeps ordinary citation failure local without inferring authorization from text or shape (%s)', async failure => {
+  const denied = vi.fn()
+  apiMock.mockReset().mockRejectedValue(failure)
+  render(<AgentRequestView request={citedRequest()} onDenied={denied} />)
+  fireEvent.click(screen.getByRole('button', { name: /核对文档版本/ }))
+  expect(await screen.findByText(/引用无法验证/)).toBeInTheDocument()
+  expect(denied).not.toHaveBeenCalled()
+  expect(screen.getByText('Review')).toBeInTheDocument()
+})
+
+it('keeps old callers without a denial callback compatible', async () => {
+  apiMock.mockReset().mockRejectedValue(rejectedRead(403))
+  show(citedRequest())
+  fireEvent.click(screen.getByRole('button', { name: /核对文档版本/ }))
+  expect(await screen.findByText(/引用无法验证/)).toBeInTheDocument()
+  expect(screen.getByText('Review')).toBeInTheDocument()
+  expect(screen.queryByText('unsafe provider text')).not.toBeInTheDocument()
+})
+
+it.each(['success', 'denial'] as const)('aborts and ignores late citation %s after unmount', async outcome => {
+  let settle!: (value: unknown) => void, reject!: (reason: unknown) => void
+  apiMock.mockReset().mockReturnValue(new Promise((resolve, fail) => { settle = resolve; reject = fail }))
+  const denied = vi.fn()
+  const view = render(<AgentRequestView request={citedRequest()} onDenied={denied} />)
+  fireEvent.click(screen.getByRole('button', { name: /核对文档版本/ }))
+  expect(apiMock).toHaveBeenCalledWith('/api/v1/projects/project-1/documents/versions/version-1', { signal: expect.any(AbortSignal) })
+  const signal = apiMock.mock.calls[0][1].signal as AbortSignal
+  expect(signal.aborted).toBe(false)
+  view.unmount()
+  expect(signal.aborted).toBe(true)
+  await act(async () => {
+    if (outcome === 'denial') reject(rejectedRead(403))
+    else settle({ id: 'version-1', projectId: 'project-1', contentSha256: 'c'.repeat(64), content: 'late private detail' })
+  })
+  expect(denied).not.toHaveBeenCalled()
+  expect(screen.queryByText('late private detail')).not.toBeInTheDocument()
+})
+
+it.each(['success', 'denial'] as const)('ignores old-scope citation %s even when request and citation IDs are reused', async outcome => {
+  let settle!: (value: unknown) => void, reject!: (reason: unknown) => void
+  apiMock.mockReset().mockReturnValueOnce(new Promise((resolve, fail) => { settle = resolve; reject = fail }))
+  const oldDenied = vi.fn(), currentDenied = vi.fn()
+  const view = render(<AgentRequestView request={citedRequest()} onDenied={oldDenied} />)
+  fireEvent.click(screen.getByRole('button', { name: /核对文档版本/ }))
+  expect(apiMock).toHaveBeenCalledWith('/api/v1/projects/project-1/documents/versions/version-1', { signal: expect.any(AbortSignal) })
+  const signal = apiMock.mock.calls[0][1].signal as AbortSignal
+  view.rerender(<AgentRequestView request={citedRequest('PROJECT_DOCUMENT', 'project-2')} onDenied={currentDenied} />)
+  expect(signal.aborted).toBe(true)
+  await act(async () => {
+    if (outcome === 'denial') reject(rejectedRead(404))
+    else settle({ id: 'version-1', projectId: 'project-1', contentSha256: 'c'.repeat(64), content: 'old scope detail' })
+  })
+  expect(oldDenied).not.toHaveBeenCalled(); expect(currentDenied).not.toHaveBeenCalled()
+  expect(screen.queryByText('old scope detail')).not.toBeInTheDocument()
+  expect(screen.queryByText(/引用无法验证/)).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /核对文档版本/ })).toBeEnabled()
 })

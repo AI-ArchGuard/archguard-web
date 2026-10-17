@@ -12,6 +12,8 @@ import { AgentDocumentsPage } from './pages/AgentDocumentsPage'
 import { agentEntryEnabled } from './agentEntry'
 import { credentialEntryEnabled } from './credentialEntry'
 import { CredentialSettingsPage } from './pages/CredentialSettingsPage'
+import { personalAgentEntryEnabled } from './personalAgentEntry'
+import { PersonalAgentPage } from './pages/PersonalAgentPage'
 
 function LoginPage() {
   const { login, user } = useAuth()
@@ -43,6 +45,8 @@ export function App() {
       <Route path="/settings/model-credentials" element={credentialEntryEnabled() ? <CredentialSettingsPage />
         : <main><h1>凭据入口已关闭</h1><p>扫描与门禁继续可用；此开关不启用模型调用。</p></main>} />
       <Route path="/projects/:projectId" element={<ProjectPage />} />
+      <Route path="/projects/:projectId/agent/personal" element={personalAgentEntryEnabled() ? <PersonalAgentPage />
+        : <main><h1>真实 Agent 入口已关闭</h1><p>扫描与门禁继续可用；页面开关不授权模型调用或费用。</p></main>} />
       <Route path="/projects/:projectId/repositories/:repositoryId/rules" element={<RuleSetsPage />} />
       <Route path="/projects/:projectId/repositories/:repositoryId/governance" element={<GovernancePage />} />
       <Route path="/projects/:projectId/scan-jobs/:jobId" element={<ScanResultPage />} />
