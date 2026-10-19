@@ -26,11 +26,11 @@ export function PersonalEnablementForm({ busy, credentialVersion, onSubmit, onDi
       setError('请填写实际核对记录、UTC 时间与非敏感检查编号，并明确确认未核实风险。'); return
     }
     setError('')
-    const input: PersonalAcknowledgementInput = { schemaVersion: '0.3.0', scope: 'PERSONAL', accountRef: text('accountRef'),
+    const input: PersonalAcknowledgementInput = { schemaVersion: '0.4.0', scope: 'PERSONAL', accountRef: text('accountRef'),
       deploymentRef: text('deploymentRef'), expiresAt: text('expiresAt'), sources: sources.map(([kind, , url]) => ({
         kind, url, version: text(`${kind}-version`), checkedAt: text(`${kind}-checkedAt`),
       })), unknowns: ['PROCESSING_REGION', 'STORAGE_REGION', 'TRAINING', 'HUMAN_REVIEW', 'LOG_RETENTION', 'CACHE_ISOLATION', 'CACHE_RETENTION', 'SUBPROCESSORS'],
-      riskAccepted: true, modelAlias: 'deepseek-flash', mappingSnapshot: 'deepseek-v4.1-flash-2026-10-15', allowedResponseModels: ['deepseek-flash'],
+      riskAccepted: true, modelAlias: 'deepseek-flash', mappingSnapshot: 'DeepSeek-V4.1-Flash-1017', allowedResponseModels: ['deepseek-flash'],
       priceCatalogVersion: 'deepseek-flash-context-peak-usd-2026-10-15', priceCatalogExpiresAt: text('priceCatalogExpiresAt'),
       secretCheckRef: text('secretCheckRef'), networkCheckRef: text('networkCheckRef'), dataScope: 'SYNTHETIC_ACCEPTANCE',
       revocationConditions: ['OWNER_REVOKED', 'SCOPE_CHANGED', 'POLICY_CHANGED', 'MODEL_CHANGED', 'PRICE_CHANGED', 'SECRET_CHECK_INVALID', 'NETWORK_CHECK_INVALID'],
@@ -42,7 +42,7 @@ export function PersonalEnablementForm({ busy, credentialVersion, onSubmit, onDi
   }
   return <form className="stack" noValidate autoComplete="off" onSubmit={event => void submit(event)} onChange={onDirty}>
     <h3>新增个人风险确认（不批准费用）</h3>
-    <p className="muted">固定官方 Responses / deepseek-flash / 2026-10-15 上下文价格策略，仅限合成验收。以下仅填非敏感索引，不填真实账户标识、路径、凭据或资料正文。</p>
+    <p className="muted">固定官方 Responses / deepseek-flash / 已批准映射 DeepSeek-V4.1-Flash-1017 / 2026-10-15 上下文价格策略，仅限合成验收。响应模型仅允许 deepseek-flash。以下仅填非敏感索引，不填真实账户标识、路径、凭据或资料正文。</p>
     <label>非敏感账户记录编号<input name="accountRef" maxLength={128} disabled={busy} /></label>
     <label>非敏感部署记录编号<input name="deploymentRef" maxLength={128} disabled={busy} /></label>
     <label>风险确认到期时间（UTC）<input name="expiresAt" placeholder="YYYY-MM-DDTHH:mm:ssZ" maxLength={32} disabled={busy} /></label>

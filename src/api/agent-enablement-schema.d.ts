@@ -34,7 +34,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Server generates immutable ID, Project/deployment and actor/time. Schema 0.2.0 remains legacy; schema 0.3.0 explicitly binds the context-peak 2026-10-15 policy and mapping, accepting input 8000 as a post-call threshold, not a pre-send proof. Mixed schema/mapping/price versions are rejected. No automatic Project enable, Key validation request, live model call or fee authorization. References are owner assertions, not independently verified evidence. */
+        /** @description Server generates immutable ID, Project/deployment and actor/time. Schema 0.4.0 explicitly binds DeepSeek-V4.1-Flash-1017 and the unchanged context-peak 2026-10-15 price, accepting input 8000 as a post-call threshold, not a pre-send proof. Historical 0.2.0/0.3.0 inputs retain their original exact pairings and cannot authorize new live sends. Mixed schema/mapping/price versions are rejected. No automatic Project enable, Key validation request, live model call or fee authorization. References are owner assertions, not independently verified evidence. */
         post: operations["acknowledgePersonalAgentRisk"];
         delete?: never;
         options?: never;
@@ -256,6 +256,63 @@ export interface components {
                 };
             };
         };
+        /**
+         * Personal approved-1017 acknowledgement input; not a live-call or batch authorization
+         * @description Explicit ADR-0015 acknowledgement of DeepSeek-V4.1-Flash-1017, preserving the ADR-0014 context price, reservation and all authority/data limits. Input 8000 remains a post-call threshold. Historical acknowledgements are never upgraded. Separate fresh concrete runtime, synthetic batch and technical authorization are required; creating this record neither enables calls nor probes a credential.
+         */
+        "agent-personal-enablement-0.4.0.schema": {
+            /** @constant */
+            schemaVersion: "0.4.0";
+            /** @constant */
+            scope: "PERSONAL";
+            accountRef: components["schemas"]["Reference"];
+            deploymentRef: components["schemas"]["Reference"];
+            /**
+             * Format: date-time
+             * @description Server requires now < expiry <= now + 7 days and expiry <= price expiry.
+             */
+            expiresAt: string;
+            /** @description Unique kinds; TERMS, PRIVACY, CACHE and MODEL_PRICE required. checkedAt within the past 7 days. Server validates exact kind/URL pairs without fetching. */
+            sources: components["schemas"]["Source"][];
+            unknowns: ("PROCESSING_REGION" | "STORAGE_REGION" | "TRAINING" | "HUMAN_REVIEW" | "LOG_RETENTION" | "CACHE_ISOLATION" | "CACHE_RETENTION" | "SUBPROCESSORS")[];
+            /** @constant */
+            riskAccepted: true;
+            /** @constant */
+            modelAlias: "deepseek-flash";
+            /** @constant */
+            mappingSnapshot: "DeepSeek-V4.1-Flash-1017";
+            allowedResponseModels: "deepseek-flash"[];
+            /** @constant */
+            priceCatalogVersion: "deepseek-flash-context-peak-usd-2026-10-15";
+            /**
+             * Format: date-time
+             * @description Server requires now < expiry <= now + 7 days; versioned peak prices and declared context underpin local reservation, not a supplier account cap.
+             */
+            priceCatalogExpiresAt: string;
+            secretCheckRef: components["schemas"]["Reference"];
+            networkCheckRef: components["schemas"]["Reference"];
+            /** @constant */
+            dataScope: "SYNTHETIC_ACCEPTANCE";
+            revocationConditions: ("OWNER_REVOKED" | "SCOPE_CHANGED" | "POLICY_CHANGED" | "MODEL_CHANGED" | "PRICE_CHANGED" | "SECRET_CHECK_INVALID" | "NETWORK_CHECK_INVALID")[];
+            /**
+             * Format: uuid
+             * @description Must match the current valid encrypted credential metadata; never contains Key material.
+             */
+            credentialVersion: string;
+            $defs: {
+                /** @description Non-sensitive opaque index only; never a supplier account ID, path or secret. */
+                Reference: string;
+                Source: {
+                    /** @enum {unknown} */
+                    kind: "TERMS" | "PRIVACY" | "CACHE" | "MODEL_PRICE" | "PROTOCOL";
+                    /** @enum {unknown} */
+                    url: "https://cdn.deepseek.com/policies/zh-CN/deepseek-open-platform-terms-of-service.html" | "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html" | "https://api-docs.deepseek.com/guides/kv_cache/" | "https://api-docs.deepseek.com/quick_start/pricing/" | "https://api-docs.deepseek.com/guides/responses_api/";
+                    version: components["schemas"]["Reference"];
+                    /** Format: date-time */
+                    checkedAt: string;
+                };
+            };
+        };
     };
     responses: {
         /** @description Project settings, no-store */
@@ -357,7 +414,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["agent-personal-enablement-0.2.0.schema"] | components["schemas"]["agent-personal-enablement-0.3.0.schema"];
+                "application/json": components["schemas"]["agent-personal-enablement-0.2.0.schema"] | components["schemas"]["agent-personal-enablement-0.3.0.schema"] | components["schemas"]["agent-personal-enablement-0.4.0.schema"];
             };
         };
         responses: {

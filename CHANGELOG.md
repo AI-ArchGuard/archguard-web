@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — approved 1017 acknowledgement
+
+- Consume the canonical Platform #64 producer `903ddc5987e0f6e63091ee4897d4311b9c41cbe9` after successful [main CI 39191487577](https://github.com/AI-ArchGuard/archguard-platform/actions/runs/39191487577): Settings/acknowledgement API 0.4.0; Batch 0.3.0 and live 0.1.0 stay unchanged.
+- Require a fresh explicit acknowledgement of exact `DeepSeek-V4.1-Flash-1017`; request alias and sole allowed response model remain `deepseek-flash`, with unchanged `deepseek-flash-context-peak-usd-2026-10-15` price, protocol, fees and limits. Preserve old schemas and historical read/revoke; never upgrade an old mapping or infer it from metadata.
+- Keep Docs -> producer -> consumer -> explicit Deploy version/digest pins and main CI -> fresh runtime binding gates. Rollback closes UI, Project, deployment and egress before application revert, preserving migrations, ciphertext and history. This update does not deploy, use either real call or claim stage exit.
+
 ## Unreleased — controlled personal Agent entry
 
 - Pin Platform Settings/Batch API 0.3.0 and live API 0.1.0; add an independent default-off personal acceptance page without changing synthetic submissions or the existing write-only credential entry.

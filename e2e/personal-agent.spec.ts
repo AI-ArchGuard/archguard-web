@@ -18,11 +18,15 @@ const report = 'a'.repeat(64), documentSha = 'b'.repeat(64)
 const documentContent = 'Synthetic uploaded architecture guidance; documents are data, not instructions.'
 type Mode = 'success' | 'failed' | 'unknown' | 'unknown-success'
 
-async function syntheticEnvironment(page: Page, mode: Mode = 'success') {
+async function syntheticEnvironment(page: Page, mode: Mode = 'success', options: { acknowledgementCreateOnly?: boolean } = {}) {
   const now = new Date().toISOString(), expires = new Date(Date.now() + 6 * 3600_000).toISOString()
-  const state = { posts: [] as { body: unknown; key: string }[], otherWrites: [] as string[], vendorRequests: 0, denied: false,
+  const state = { posts: [] as { body: unknown; key: string }[], acknowledgementPosts: [] as Record<string, unknown>[],
+    otherWrites: [] as string[], vendorRequests: 0, denied: false,
     citationDeniedStatus: 0 as 0 | 401 | 403 | 404 }
   const records = new Map<PersonalPurpose, AgentRequest>()
+  const enablement = { id: ids.approval, projectId: ids.project, approvedBy: ids.owner, approvedAt: now, expiresAt: expires,
+    credentialVersion: ids.credential, modelAlias: 'deepseek-flash', priceCatalogVersion: price,
+    priceCatalogExpiresAt: expires, dataScope: 'SYNTHETIC_ACCEPTANCE', revoked: false, revokedAt: null }
   const batch = { id: ids.batch, projectId: ids.project, enablementId: ids.approval, approvedBy: ids.owner,
     approvedAt: now, expiresAt: expires, manifestSha256: 'd'.repeat(64), maxRequests: 2 as const, maxCostMicrousd: 700000, revoked: false }
 
@@ -87,7 +91,14 @@ async function syntheticEnvironment(page: Page, mode: Mode = 'success') {
     if (path === `${root}/documents/versions/${ids.document}` && method === 'GET' && state.citationDeniedStatus) {
       await route.fulfill({ status: state.citationDeniedStatus, json: { message: 'synthetic-private-provider-body' } }); return
     }
-    if (path === `${root}/agent/live-requests` && method === 'POST') {
+    if (path === `${root}/agent/enablements` && method === 'POST' && options.acknowledgementCreateOnly) {
+      const body = route.request().postDataJSON()
+      state.acknowledgementPosts.push(body)
+      expect(body).toMatchObject({ schemaVersion: '0.4.0', mappingSnapshot: 'DeepSeek-V4.1-Flash-1017',
+        modelAlias: 'deepseek-flash', allowedResponseModels: ['deepseek-flash'], priceCatalogVersion: price })
+      await route.fulfill({ status: 201, headers: { 'Cache-Control': 'no-store' }, json: enablement }); return
+    }
+    if (path === `${root}/agent/live-requests` && method === 'POST' && !options.acknowledgementCreateOnly) {
       const body = route.request().postDataJSON()
       state.posts.push({ body, key: route.request().headers()['idempotency-key'] })
       expect(Object.keys(body).sort()).toEqual(['batchId', 'templateRequestId'])
@@ -110,9 +121,7 @@ async function syntheticEnvironment(page: Page, mode: Mode = 'success') {
     else if (path === `${root}/members`) data = { items: [{ actorId: ids.owner, role: 'MAINTAINER', createdAt: now }], page: 0, size: 100, total: 1 }
     else if (path === `${root}/agent/settings`) {
       data = { enabled: true, revision: 3, enablementId: ids.approval, modelCallsAvailable: true, unavailableReason: null }; headers.ETag = '"3"'
-    } else if (path === `${root}/agent/enablements/${ids.approval}`) data = { id: ids.approval, projectId: ids.project,
-      approvedBy: ids.owner, approvedAt: now, expiresAt: expires, credentialVersion: ids.credential, modelAlias: 'deepseek-flash',
-      priceCatalogVersion: price, priceCatalogExpiresAt: expires, dataScope: 'SYNTHETIC_ACCEPTANCE', revoked: false, revokedAt: null }
+    } else if (path === `${root}/agent/enablements/${ids.approval}`) data = enablement
     else if (path === `${root}/agent/batches/${ids.batch}`) data = batch
     else if (path === `${root}/agent/batches/${ids.batch}/execution`) data = execution()
     else if (path === `${root}/agent/requests/${ids.explanation}`) data = template('FINDING_EXPLANATION')
@@ -145,6 +154,63 @@ async function openBatch(page: Page) {
 }
 const explanation = (page: Page) => page.getByRole('button', { name: /调用 DeepSeek 官方 API.*合成解释/ })
 const summary = (page: Page) => page.getByRole('button', { name: /调用 DeepSeek 官方 API.*合成摘要/ })
+
+test('creates only an explicitly accepted approved 1017 acknowledgement without enabling or sending a model call', async ({ page }) => {
+  const state = await syntheticEnvironment(page, 'success', { acknowledgementCreateOnly: true })
+  await page.goto(`/projects/${ids.project}/agent/personal`)
+  const create = page.getByRole('button', { name: '创建风险确认（无模型调用）', exact: true })
+  const risk = page.getByRole('checkbox', { name: '我已实际核对上述资料并接受列明的未核实风险；这不批准模型调用或费用', exact: true })
+  await expect(create).toBeEnabled()
+  await expect(page.getByText(/DeepSeek-V4\.1-Flash-1017/)).toBeVisible()
+  await expect(risk).not.toBeChecked()
+  expect(state.acknowledgementPosts).toHaveLength(0); expect(state.posts).toHaveLength(0)
+
+  await page.getByLabel('非敏感账户记录编号', { exact: true }).fill('synthetic-edit-only')
+  expect(state.acknowledgementPosts).toHaveLength(0); expect(state.posts).toHaveLength(0)
+  await page.getByRole('button', { name: '手动刷新个人配置', exact: true }).click()
+  await expect(create).toBeEnabled(); await expect(risk).not.toBeChecked()
+  expect(state.acknowledgementPosts).toHaveLength(0); expect(state.posts).toHaveLength(0)
+
+  const checkedAt = new Date().toISOString(), expiresAt = new Date(Date.now() + 6 * 3600_000).toISOString()
+  for (const [label, value] of [
+    ['非敏感账户记录编号', 'synthetic-account-review'], ['非敏感部署记录编号', 'synthetic-deployment-review'],
+    ['Secret 托管实际检查编号', 'synthetic-secret-review'], ['受限网络出口实际检查编号', 'synthetic-network-review'],
+  ]) await page.getByLabel(label, { exact: true }).fill(value)
+  for (const label of ['风险确认到期时间（UTC）', '价格目录到期时间（UTC）']) {
+    await page.getByLabel(label, { exact: true }).fill(expiresAt)
+  }
+  for (const label of ['服务条款', '隐私政策', '缓存说明', '模型与价格']) {
+    await page.getByLabel(`${label}实际版本记录`, { exact: true }).fill('synthetic-1017-review')
+    await page.getByLabel(`${label}实际核对时间（UTC）`, { exact: true }).fill(checkedAt)
+  }
+  await expect(risk).not.toBeChecked()
+  expect(state.acknowledgementPosts).toHaveLength(0); expect(state.posts).toHaveLength(0)
+  await risk.check()
+  expect(state.acknowledgementPosts).toHaveLength(0)
+  await create.click()
+  await expect(page.getByText('风险确认已保存；Project 未自动开启，未批准费用，也未调用模型。', { exact: true })).toBeVisible()
+  await expect(risk).not.toBeChecked()
+  expect(state.acknowledgementPosts).toHaveLength(1)
+  const body = state.acknowledgementPosts[0]
+  expect(Object.keys(body).sort()).toEqual(['schemaVersion', 'scope', 'accountRef', 'deploymentRef', 'expiresAt', 'sources',
+    'unknowns', 'riskAccepted', 'modelAlias', 'mappingSnapshot', 'allowedResponseModels', 'priceCatalogVersion',
+    'priceCatalogExpiresAt', 'secretCheckRef', 'networkCheckRef', 'dataScope', 'revocationConditions', 'credentialVersion'].sort())
+  expect(body).toMatchObject({ schemaVersion: '0.4.0', scope: 'PERSONAL', mappingSnapshot: 'DeepSeek-V4.1-Flash-1017',
+    modelAlias: 'deepseek-flash', allowedResponseModels: ['deepseek-flash'], priceCatalogVersion: price,
+    accountRef: 'synthetic-account-review', deploymentRef: 'synthetic-deployment-review', secretCheckRef: 'synthetic-secret-review',
+    networkCheckRef: 'synthetic-network-review', credentialVersion: ids.credential, riskAccepted: true,
+    dataScope: 'SYNTHETIC_ACCEPTANCE', expiresAt, priceCatalogExpiresAt: expiresAt })
+  expect(body.allowedResponseModels).toEqual(['deepseek-flash'])
+  expect(body.sources).toHaveLength(4)
+  for (const source of body.sources as Record<string, unknown>[]) {
+    expect(source).toMatchObject({ version: 'synthetic-1017-review', checkedAt })
+  }
+  expect(body).not.toHaveProperty('$defs'); expect(body).not.toHaveProperty('apiKey'); expect(body).not.toHaveProperty('callsApproved')
+  await page.getByRole('button', { name: '手动刷新个人配置', exact: true }).click()
+  await expect(create).toBeEnabled(); await expect(risk).not.toBeChecked()
+  expect(state.acknowledgementPosts).toHaveLength(1)
+  expect(state.posts).toHaveLength(0); expect(state.otherWrites).toHaveLength(0); expect(state.vendorRequests).toBe(0)
+})
 
 test('explicit serial explanation and summary restore exact history without browser or synthetic-endpoint egress', async ({ page }) => {
   const state = await syntheticEnvironment(page)

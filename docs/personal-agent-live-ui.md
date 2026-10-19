@@ -2,6 +2,16 @@
 
 状态：实现与回归已落盘，独立审阅及最终交付检查进行中；尚未合并、部署或真实验收。提供方 Platform #62/#63 已合并，main `9f68dea97fca7893961c8305ce84ff215be9d0df` CI 成功；本切片只消费固定契约，不部署或调用模型。依据 Docs ADR-0012/0013/0014 和个人 Agent Feature Spec。
 
+## 1017 映射跟进
+
+本次前向更新依据已接受的 Docs ADR-0015（Docs `077a7c5`、main CI `39144567175`），消费 Platform [#64](https://github.com/AI-ArchGuard/archguard-platform/pull/64) 的规范提交 `903ddc5987e0f6e63091ee4897d4311b9c41cbe9`，其 [main CI 39191487577](https://github.com/AI-ArchGuard/archguard-platform/actions/runs/39191487577) 成功。Web 自身生成、回归、审阅和 PR/main CI 仍须完成，不把此前实现计划中的历史结果作为本次验证。
+
+当前新增确认仅接受 Settings/确认 `0.4.0`，固定大小写敏感的 `mappingSnapshot: DeepSeek-V4.1-Flash-1017`。请求别名及唯一响应模型均为 `deepseek-flash`；公告快照名不加入响应白名单，价格仍为 `deepseek-flash-context-peak-usd-2026-10-15`。表单明确显示批准快照，实际资料核对记录仍由操作员提供，风险框必须手动勾选。旧 0.2/0.3 Schema 不改写；历史读取、撤销和结算按原记录处理，旧映射不隐式升级，也不批准新真实发送。只读确认元数据不新增映射字段；Web 不据此推断版本，后台可用性仍由服务器决定。
+
+Batch `0.3.0`、live `0.1.0`、模型协议/profile、费用/预留/次数、完整请求 6,000 字节、输出 1,500 Token、调用后输入 8,000 阈值、默认关闭和 Key 托管流程不变。新增假 HTTP 浏览器场景只允许显式创建风险确认；加载、编辑、刷新不写入，其他设置/批次/凭据/模型写入及全部外部请求均拦截。该场景不替代真实运行绑定或验收证据。
+
+兼容顺序为 Docs/main CI → 上述生产者/main CI → Web 消费者/main CI → Deploy 显式固定兼容版本/摘要及其 main CI → 新鲜具体运行绑定；两个真实调用仍未使用。回滚先关闭 UI、Project、部署和出口，再回退应用，保留已发布迁移、密文、确认、费用及其他历史。#43、4H、阶段4继续开放。
+
 ## 范围与风险
 
 新增独立 `/projects/:projectId/agent/personal` 页面，只在 `VITE_AGENT_UI_ENABLED=true` 且 `VITE_AGENT_LIVE_UI_ENABLED=true` 时挂载，默认关闭。复用已有只写 Key 页面，不新增 Key 输入/存储/回显，不访问 DeepSeek 或账户/余额。旧 Finding 解释和 PR 摘要保留 synthetic POST，不能静默切换。
@@ -14,7 +24,7 @@
 
 ## 客户端与状态
 
-API 类型只从固定 OpenAPI 生成：enablement 0.3.0、batches 0.3.0、live 0.1.0 及其固定输入 Schema，既有 Agent/Scanner 契约不变。独立有界同源客户端固定路径、no-store、拒绝重定向、15 秒取消、受限正文，不显示错误原文。设置写入使用 GET 返回的原始强 ETag，不用 JavaScript number 重建 int64 revision。
+API 类型只从固定 OpenAPI 生成：enablement 0.4.0、batches 0.3.0、live 0.1.0 及其固定输入 Schema，既有 Agent/Scanner 契约不变。独立有界同源客户端固定路径、no-store、拒绝重定向、15 秒取消、受限正文，不显示错误原文。设置写入使用 GET 返回的原始强 ETag，不用 JavaScript number 重建 int64 revision。
 
 Project/身份变更及离页取消浏览器在途工作、忽略迟到响应，明确客户端取消不等于后台撤销。批次执行视图按解释→摘要恢复确切 request ID，已有槽位不能创建替代请求；SETTLED 不等于结果成功，无 attempt 不等于可补发。摘要必须先观察解释 SUCCEEDED 且 SETTLED，仍需服务端逐次准入。单个 batch/template 的幂等键固定，不因终态、超时或渲染而更换。未知提交只手动恢复 GET，不自动 POST；401/403/404 清空敏感结果，已验证结果/引用复用现有展示及当前 Project 授权读取。
 

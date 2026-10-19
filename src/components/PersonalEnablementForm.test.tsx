@@ -32,13 +32,19 @@ it('requires explicit acceptance and sends only the frozen context policy plus a
   fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: '创建风险确认（无模型调用）' }))
   await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
   const input = submit.mock.calls[0][0]
-  expect(input).toMatchObject({ schemaVersion: '0.3.0', scope: 'PERSONAL', dataScope: 'SYNTHETIC_ACCEPTANCE',
-    credentialVersion: credential, modelAlias: 'deepseek-flash', mappingSnapshot: 'deepseek-v4.1-flash-2026-10-15',
+  expect(input).toMatchObject({ schemaVersion: '0.4.0', scope: 'PERSONAL', dataScope: 'SYNTHETIC_ACCEPTANCE',
+    credentialVersion: credential, modelAlias: 'deepseek-flash', mappingSnapshot: 'DeepSeek-V4.1-Flash-1017',
     priceCatalogVersion: 'deepseek-flash-context-peak-usd-2026-10-15', riskAccepted: true,
-    accountRef: 'synthetic-review-20261016', secretCheckRef: 'synthetic-review-20261016', networkCheckRef: 'synthetic-review-20261016' })
-  expect(input.sources).toHaveLength(4); expect(input.sources[0].checkedAt).toBe('2026-10-16T08:00:00Z')
+    accountRef: 'synthetic-review-20261016', deploymentRef: 'synthetic-review-20261016',
+    secretCheckRef: 'synthetic-review-20261016', networkCheckRef: 'synthetic-review-20261016',
+    expiresAt: '2026-10-17T08:00:00Z', priceCatalogExpiresAt: '2026-10-17T08:00:00Z' })
+  expect(input.allowedResponseModels).toEqual(['deepseek-flash'])
+  expect(screen.getByText(/DeepSeek-V4\.1-Flash-1017/)).toBeVisible()
+  expect(screen.getByText(/Responses.*deepseek-flash.*2026-10-15/)).toBeVisible()
+  expect(input.sources).toHaveLength(4)
+  for (const source of input.sources) expect(source).toMatchObject({ version: 'reviewed-20261016', checkedAt: '2026-10-16T08:00:00Z' })
   expect(input.unknowns).toHaveLength(8); expect(input.revocationConditions).toHaveLength(7)
-  expect(input).not.toHaveProperty('callsApproved'); expect(input).not.toHaveProperty('apiKey')
+  expect(input).not.toHaveProperty('callsApproved'); expect(input).not.toHaveProperty('apiKey'); expect(input).not.toHaveProperty('$defs')
   await waitFor(() => expect(screen.getByRole('checkbox')).not.toBeChecked())
 })
 
