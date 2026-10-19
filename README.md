@@ -21,11 +21,15 @@ ArchGuard 治理平台的独立 React 客户端。提供 OIDC Authorization Code
 
 ## 本地验证
 
-个人 Agent 的[受控 Web 入口设计](docs/personal-agent-live-ui.md)消费 Platform #62/#63 的 Settings/Batch 0.3.0 和独立 live 0.1.0 固定契约。`/projects/:projectId/agent/personal` 同时要求原 Agent 展示开关及独立 `VITE_AGENT_LIVE_UI_ENABLED=true`（Docker 同名 build arg），两者默认关闭；它们都不是后端权限或费用授权。现有 Key 页面继续仅加密保存元数据状态，不自动测试或启用模型；原合成入口不会切换提供方。
+个人 Agent 的[受控 Web 入口设计](docs/personal-agent-live-ui.md)消费 Settings/个人确认 0.4.0、保持 Batch 0.3.0 和独立 live 0.1.0 固定契约。`/projects/:projectId/agent/personal` 同时要求原 Agent 展示开关及独立 `VITE_AGENT_LIVE_UI_ENABLED=true`（Docker 同名 build arg），两者默认关闭；它们都不是后端权限或费用授权。现有 Key 页面继续仅加密保存元数据状态，不自动测试或启用模型；原合成入口不会切换提供方。
+
+本次依据已接受的 [ADR-0015](https://github.com/AI-ArchGuard/archguard-docs/blob/main/adr/0015-approved-deepseek-1017-mapping.md)，仅消费 Platform [#64](https://github.com/AI-ArchGuard/archguard-platform/pull/64) 的规范生产者提交 `903ddc5987e0f6e63091ee4897d4311b9c41cbe9`（[main CI 39191487577](https://github.com/AI-ArchGuard/archguard-platform/actions/runs/39191487577) 成功）。新风险确认必须由用户显式提交 `0.4.0` 与精确映射 `DeepSeek-V4.1-Flash-1017`；请求别名及唯一响应模型仍为 `deepseek-flash`，价格仍为 `deepseek-flash-context-peak-usd-2026-10-15`。旧 Schema 和历史读取/撤销保留，旧映射不隐式升级，也不能作为新真实发送的批准；页面不从只读元数据推断映射，后台可用性仍由服务器决定。
 
 新页面分开管理风险确认、Project 开关与具体合成批次，然后由用户分别点击真实解释和摘要；每次最多 USD 0.35、两次总授权 USD 0.70，保守预留 USD 0.316373/次，输入 8,000 是调用后阈值，并非发送前保证或厂商强制限费。未知/失败后只恢复读取，不自动重试或补发；已分配模板永久保留同一请求。设置使用服务器原始强 ETag，批次/请求状态从后端恢复，不用浏览器记忆冒充业务事实。关闭/撤销不能撤回已经发送的数据。
 
 本切片不部署或发起真实请求；默认关闭、独立工程/CI、受限出口、具体运行绑定及获批真实验收/最终回滚/制品/唯一报告仍须逐项完成。个人范围不含客户源码、公开部署或企业零保留保证；#43、4H、阶段4不提前关闭。
+
+1017 跟进顺序为已合并 Docs/main CI → 上述 Platform 生产者/main CI → Web 消费者/main CI → Deploy 显式固定兼容版本/摘要及其 main CI → 新鲜具体运行绑定。原协议、费用、次数、6,000 字节/1,500 Token 和调用后输入 8,000 阈值不变。回滚先关闭 Web 入口、Project、部署及真实出口，再回退应用；保留迁移、密文和历史，不能恢复旧确认作为当前发送授权。
 
 ```bash
 npm ci

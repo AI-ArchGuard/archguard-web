@@ -8,7 +8,7 @@ export type PersonalSettings = Enablement['schemas']['Settings']
 export type PersonalSettingsSnapshot = { value: PersonalSettings; etag: string }
 export type PersonalEnablement = Enablement['schemas']['Enablement']
 // $defs describes the fixed schema, not a field accepted in the JSON request body.
-export type PersonalAcknowledgementInput = Omit<Extract<EnablementOperations['acknowledgePersonalAgentRisk']['requestBody']['content']['application/json'], { schemaVersion: '0.3.0' }>, '$defs'>
+export type PersonalAcknowledgementInput = Omit<Extract<EnablementOperations['acknowledgePersonalAgentRisk']['requestBody']['content']['application/json'], { schemaVersion: '0.4.0' }>, '$defs'>
 export type PersonalBatchInput = Extract<BatchOperations['approvePersonalSyntheticBatch']['requestBody']['content']['application/json'], { maxRequests: 2 }>
 export type PersonalBatch = Batches['schemas']['Batch']
 export type PersonalBatchExecution = Batches['schemas']['BatchExecution']
@@ -162,8 +162,8 @@ function validateRisk(value: PersonalAcknowledgementInput) {
   const reference = (item: unknown) => typeof item === 'string' && /^(?!sk-)[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(item)
   const exactList = (items: unknown, allowed: string[]) => Array.isArray(items) && items.length === allowed.length
     && new Set(items).size === items.length && items.every(item => allowed.includes(item))
-  requireValue(data.schemaVersion === '0.3.0' && data.scope === 'PERSONAL' && data.riskAccepted === true
-    && data.modelAlias === 'deepseek-flash' && data.mappingSnapshot === 'deepseek-v4.1-flash-2026-10-15'
+  requireValue(data.schemaVersion === '0.4.0' && data.scope === 'PERSONAL' && data.riskAccepted === true
+    && data.modelAlias === 'deepseek-flash' && data.mappingSnapshot === 'DeepSeek-V4.1-Flash-1017'
     && data.priceCatalogVersion === policy && data.dataScope === 'SYNTHETIC_ACCEPTANCE' && isUuid(data.credentialVersion)
     && [data.accountRef, data.deploymentRef, data.secretCheckRef, data.networkCheckRef].every(reference)
     && date(data.expiresAt) && date(data.priceCatalogExpiresAt) && exactList(data.unknowns, unknownRisks)

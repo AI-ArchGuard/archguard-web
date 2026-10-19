@@ -45,14 +45,14 @@ const successfulRequest = () => ({ ...agentRequest(), state: 'SUCCEEDED',
         reportSha256: null, evidenceId: null, documentVersionId: credential, contentSha256: 'd'.repeat(64), fragmentIndex: 0, fragmentSha256: 'e'.repeat(64) },
     ] }, usage: { inputTokens: 1000, outputTokens: 100, latencyMs: 20, providerLatencyMs: 10, estimatedCostMicrousd: 316373,
     actualCostMicrousd: 273, providerResponseId: 'synthetic-response-only', actualModelId: 'deepseek-flash' } })
-const riskInput = (): PersonalAcknowledgementInput => ({ schemaVersion: '0.3.0', scope: 'PERSONAL', accountRef: 'personal-local',
+const riskInput = (): PersonalAcknowledgementInput => ({ schemaVersion: '0.4.0', scope: 'PERSONAL', accountRef: 'personal-local',
   deploymentRef: 'local-compose', expiresAt: expiry, sources: [
     { kind: 'TERMS', url: 'https://cdn.deepseek.com/policies/zh-CN/deepseek-open-platform-terms-of-service.html', version: 'review-1', checkedAt: stamp },
     { kind: 'PRIVACY', url: 'https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html', version: 'review-1', checkedAt: stamp },
     { kind: 'CACHE', url: 'https://api-docs.deepseek.com/guides/kv_cache/', version: 'review-1', checkedAt: stamp },
     { kind: 'MODEL_PRICE', url: 'https://api-docs.deepseek.com/quick_start/pricing/', version: 'review-1', checkedAt: stamp },
   ], unknowns: ['PROCESSING_REGION', 'STORAGE_REGION', 'TRAINING', 'HUMAN_REVIEW', 'LOG_RETENTION', 'CACHE_ISOLATION', 'CACHE_RETENTION', 'SUBPROCESSORS'],
-  riskAccepted: true, modelAlias: 'deepseek-flash', mappingSnapshot: 'deepseek-v4.1-flash-2026-10-15', allowedResponseModels: ['deepseek-flash'],
+  riskAccepted: true, modelAlias: 'deepseek-flash', mappingSnapshot: 'DeepSeek-V4.1-Flash-1017', allowedResponseModels: ['deepseek-flash'],
   priceCatalogVersion: policy, priceCatalogExpiresAt: expiry, secretCheckRef: 'secret-check-1', networkCheckRef: 'network-check-1',
   dataScope: 'SYNTHETIC_ACCEPTANCE', revocationConditions: ['OWNER_REVOKED', 'SCOPE_CHANGED', 'POLICY_CHANGED', 'MODEL_CHANGED', 'PRICE_CHANGED', 'SECRET_CHECK_INVALID', 'NETWORK_CHECK_INVALID'], credentialVersion: credential })
 const batchInput = (): PersonalBatchInput => ({ enablementId: acknowledgement, syntheticInventoryId: credential,
@@ -170,11 +170,48 @@ it('bounds UTF-8 metadata, validates media/status and rejects network error deta
   expect(fetcher).toHaveBeenCalledTimes(4)
 })
 
-it('rejects unexpected outbound fields, oversized bodies and legacy body before network', async () => {
+it('accepts the explicitly approved 1017 acknowledgement through the fixed same-origin client boundary', async () => {
+  const fetcher = mock(enablement, 201), input = riskInput()
+  await expect(acknowledgePersonalRisk(project, input, signal())).resolves.toEqual(enablement)
+  expect(fetcher).toHaveBeenCalledTimes(1)
+  const [path, init] = fetcher.mock.calls[0] as [string, RequestInit]
+  expect(path).toBe(`/api/v1/projects/${project}/agent/enablements`)
+  expect(init).toMatchObject({ method: 'POST', cache: 'no-store', credentials: 'same-origin', redirect: 'error', referrerPolicy: 'no-referrer' })
+  const body = JSON.parse(init.body as string)
+  expect(body).toEqual(input)
+  expect(body).toMatchObject({ schemaVersion: '0.4.0', mappingSnapshot: 'DeepSeek-V4.1-Flash-1017',
+    modelAlias: 'deepseek-flash', allowedResponseModels: ['deepseek-flash'],
+    priceCatalogVersion: 'deepseek-flash-context-peak-usd-2026-10-15' })
+  expect(body).not.toHaveProperty('$defs'); expect(body).not.toHaveProperty('apiKey'); expect(body).not.toHaveProperty('callsApproved')
+})
+
+it.each([
+  ['old 0.3.0 mapping', { schemaVersion: '0.3.0', mappingSnapshot: 'deepseek-v4.1-flash-2026-10-15' }],
+  ['old 0.2.0 mapping and price', { schemaVersion: '0.2.0', mappingSnapshot: 'deepseek-v4.1-flash-2026-10-06', priceCatalogVersion: 'deepseek-flash-peak-usd-2026-10-06' }],
+  ['new schema with old mapping', { mappingSnapshot: 'deepseek-v4.1-flash-2026-10-15' }],
+  ['old schema with approved mapping', { schemaVersion: '0.3.0' }],
+  ['wrong-case approved mapping', { mappingSnapshot: 'deepseek-v4.1-flash-1017' }],
+  ['snapshot used as request alias', { modelAlias: 'DeepSeek-V4.1-Flash-1017' }],
+  ['empty response model list', { allowedResponseModels: [] }],
+  ['duplicate response alias', { allowedResponseModels: ['deepseek-flash', 'deepseek-flash'] }],
+  ['extra response model', { allowedResponseModels: ['deepseek-flash', 'DeepSeek-V4.1-Flash-1017'] }],
+  ['snapshot used as response model', { allowedResponseModels: ['DeepSeek-V4.1-Flash-1017'] }],
+  ['wrong-case response alias', { allowedResponseModels: ['DeepSeek-Flash'] }],
+  ['legacy price', { priceCatalogVersion: 'deepseek-flash-peak-usd-2026-10-06' }],
+  ['unknown outbound field', { unexpected: true }],
+  ['$defs in request body', { $defs: {} }],
+  ['credential material in request body', { apiKey: 'synthetic-forbidden' }],
+  ['oversized acknowledgement', { accountRef: 'x'.repeat(9000) }],
+] as const)('rejects unexpected outbound fields, oversized bodies and legacy body before network: %s', async (_label, changed) => {
   const fetcher = mock(enablement, 201)
-  await expect(acknowledgePersonalRisk(project, { ...riskInput(), accountRef: 'x'.repeat(9000) }, signal())).rejects.toBeInstanceOf(PersonalAgentClientError)
+  const input = { ...riskInput(), ...changed } as unknown as PersonalAcknowledgementInput
+  await expect(acknowledgePersonalRisk(project, input, signal())).rejects.toMatchObject({ status: 400 })
+  expect(fetcher).not.toHaveBeenCalled()
+})
+
+it('rejects unexpected outbound batch fields before network', async () => {
+  const fetcher = mock(enablement, 201)
   await expect(approvePersonalBatch(project, { ...batchInput(), apiKey: 'synthetic-forbidden' } as PersonalBatchInput, signal())).rejects.toBeInstanceOf(PersonalAgentClientError)
-  await expect(acknowledgePersonalRisk(project, { ...riskInput(), schemaVersion: '0.2.0' } as unknown as PersonalAcknowledgementInput, signal())).rejects.toBeInstanceOf(PersonalAgentClientError)
   expect(fetcher).not.toHaveBeenCalled()
 })
 
