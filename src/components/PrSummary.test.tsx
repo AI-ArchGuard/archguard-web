@@ -1,3 +1,4 @@
+// PR 摘要准入回归：可信修订、Maintainer 身份和明确 Finding 选择缺一不可。
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { PrSummary } from './PrSummary'
 import type { GateEvaluation, PullRequest } from '../api/governance'
@@ -17,6 +18,7 @@ const pr = { projectId: 'project-1', repositoryId: 'repository-1', externalId: '
 const gate = { id: 'gate-1', projectId: 'project-1', repositoryId: 'repository-1', targetBranch: 'main', candidateJobId: 'job-1' } as GateEvaluation
 beforeEach(() => { state.role = 'MAINTAINER'; state.api.mockReset() })
 
+// 验证显式选择 Finding 后才提交可信 PR/扫描绑定。
 it('requires an explicit Finding selection and submits the verified PR/scan binding only on click', async () => {
   state.api.mockResolvedValue({ id: 'request-1', purpose: 'PR_SUMMARY', projectId: 'project-1', state: 'FAILED',
     failure: { code: 'MODEL_DISABLED' }, traceId: 'trace-1', bindings: { scanJobId: 'job-1', reportSha256: 'a'.repeat(64),
@@ -32,12 +34,14 @@ it('requires an explicit Finding selection and submits the verified PR/scan bind
   expect(await screen.findByRole('alert')).toHaveTextContent('模型调用已关闭')
 })
 
+// 验证缺失可信 head 历史时不提供摘要。
 it('does not offer a summary without trusted head history', () => {
   render(<PrSummary projectId="project-1" repositoryId="repository-1" pr={{ ...pr, currentHeadRevisionId: null }} gate={gate} />)
   expect(screen.getByText(/缺少可信的 PR 修订/)).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /生成所选/ })).not.toBeInTheDocument()
 })
 
+// 验证摘要写入口仅向 Maintainer 显示。
 it('limits the Web summary entry to Maintainers', () => {
   state.role = 'VIEWER'
   render(<PrSummary projectId="project-1" repositoryId="repository-1" pr={pr} gate={gate} />)

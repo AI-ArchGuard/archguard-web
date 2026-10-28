@@ -1,3 +1,4 @@
+// 凭据入口回归：验证默认关闭、独立开关和关闭时不挂载页面。
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { App } from './App'
@@ -6,6 +7,7 @@ import { credentialEntryEnabled } from './credentialEntry'
 vi.mock('./auth/AuthContext', () => ({ useAuth: () => ({ loading: false, user: { profile: { sub: 'owner' } }, logout: vi.fn() }) }))
 afterEach(() => vi.unstubAllEnvs())
 
+// 验证非法/关闭值不挂载凭据页。
 it.each(['false', '', 'TRUE', 'yes'])('fails closed and does not mount the credential page (%s)', value => {
   vi.stubEnv('VITE_CREDENTIAL_UI_ENABLED', value)
   expect(credentialEntryEnabled()).toBe(false)
@@ -15,6 +17,7 @@ it.each(['false', '', 'TRUE', 'yes'])('fails closed and does not mount the crede
   expect(screen.queryByLabelText('新的 DeepSeek API Key')).not.toBeInTheDocument()
 })
 
+// 验证凭据展示开关精确匹配且独立于 Agent 开关。
 it('requires exact true, independently of the Agent presentation flag', () => {
   vi.stubEnv('VITE_CREDENTIAL_UI_ENABLED', 'true'); vi.stubEnv('VITE_AGENT_UI_ENABLED', 'false')
   expect(credentialEntryEnabled()).toBe(true)

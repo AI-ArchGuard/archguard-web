@@ -1,3 +1,4 @@
+/* ArchGuard 客户端共享样式：覆盖登录、治理、扫描、建议和凭据页面；窄屏规则调整布局。 */
 :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #18212f; background: #f3f6f8; font-synthesis: none; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
@@ -10,6 +11,7 @@ label { display: grid; gap: .4rem; color: #43505d; font-size: .88rem; font-weigh
 h1 { margin: .15rem 0; font-size: clamp(2rem, 4vw, 3.4rem); letter-spacing: -.045em; }
 h2 { margin-top: 2rem; font-size: 1.15rem; }
 main { max-width: 78rem; margin: 0 auto; padding: 2.5rem 1.5rem 5rem; }
+/* 已登录外壳、身份导航及登录页的视觉层次。 */
 .topbar { height: 4.25rem; padding: 0 max(1.5rem, calc((100vw - 75rem)/2)); display: flex; align-items: center; justify-content: space-between; background: #0d252a; color: #e8f4f1; }
 .brand { color: white; font-weight: 760; letter-spacing: -.02em; display: flex; gap: .7rem; align-items: center; }
 .brand span { display: grid; place-items: center; width: 2rem; height: 2rem; background: #e7c978; color: #0d252a; border-radius: .5rem; font-size: .75rem; }
@@ -20,6 +22,7 @@ main { max-width: 78rem; margin: 0 auto; padding: 2.5rem 1.5rem 5rem; }
 .login p:not(.eyebrow) { max-width: 38rem; color: #5a6672; font-size: 1.2rem; line-height: 1.6; }
 .eyebrow { margin: 0; color: #08746e; text-transform: uppercase; letter-spacing: .16em; font-size: .72rem; font-weight: 800; }
 .page-head { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 2rem; }
+/* 通用布局与内容容器由各业务页复用；列表选择样式只表达当前界面选择。 */
 .panel, .card, .finding, .version { background: white; border: 1px solid #dbe2e6; border-radius: .8rem; padding: 1.2rem; box-shadow: 0 8px 24px rgba(24, 33, 47, .045); }
 .inline-form { display: grid; grid-template-columns: 1fr 2fr auto; gap: 1rem; align-items: end; }
 .stack { display: grid; gap: .85rem; }
@@ -35,6 +38,7 @@ main { max-width: 78rem; margin: 0 auto; padding: 2.5rem 1.5rem 5rem; }
 .selectable { width: 100%; }.selectable.selected { border-color: #08746e; box-shadow: 0 0 0 2px #d7eeeb; }
 .editor { min-height: 28rem; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; line-height: 1.55; tab-size: 2; }
 .version { margin-top: .75rem; }.version div { display: flex; justify-content: space-between; gap: 1rem; }.version small { color: #687581; }
+/* 扫描摘要、严重性和人工处置分别使用独立样式，避免视觉上混淆不同状态。 */
 .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: .8rem; margin-bottom: 1rem; }
 .summary > div { display: grid; gap: .35rem; padding: 1rem; background: #e9efef; border-radius: .65rem; }.summary small { color: #687581; }
 .badge, .severity { display: inline-block; width: fit-content; border-radius: 999px; padding: .2rem .55rem; background: #e4eaed; font-size: .72rem; font-weight: 800; letter-spacing: .04em; }
@@ -43,9 +47,12 @@ main { max-width: 78rem; margin: 0 auto; padding: 2.5rem 1.5rem 5rem; }
 .disposition { display: grid; grid-template-columns: 10rem 1fr auto; gap: .65rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #edf0f2; }
 .state { padding: 2rem; text-align: center; border: 1px dashed #bdc8ce; border-radius: .7rem; color: #687581; }.state.error { border-color: #d99a95; background: #fff5f4; color: #8d2823; }
 .danger { background: #9b3028; }.modal { position: fixed; inset: 0; display: grid; place-items: center; padding: 1rem; background: rgba(8, 25, 29, .55); }.modal .panel { width: min(38rem, 100%); position: relative; }.close { position: absolute; right: 1rem; top: 1rem; }
+/* 治理筛选、门禁历史和例外状态共用布局；颜色只展示服务端结果，不参与规则计算。 */
 .muted { color: #687581; line-height: 1.5; }.row-actions, .pager, .exception-head { display: flex; align-items: center; justify-content: space-between; gap: .8rem; }.row-actions { flex-wrap: wrap; }.pager { margin-top: .8rem; }.governance-filter h2 { margin-top: 0; }.governance-filter small { display: block; margin-top: 1rem; color: #687581; overflow-wrap: anywhere; }.filter-grid { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: .8rem; align-items: end; }.governance-page section { min-width: 0; }.governance-page .split { margin-top: 1.5rem; }.governance-page .selectable { cursor: pointer; }.governance-page .selectable span { min-width: 0; }.governance-page progress { width: 7rem; accent-color: #08746e; }.governance-page .finding small { display: block; margin-top: .6rem; }.gate-pass, .exception-active { background: #d8efe3; color: #17623c; }.gate-fail, .gate-error, .exception-expired, .exception-revoked { background: #f5d9d7; color: #8d2823; }.exception-pending { background: #f7e9bf; color: #72550e; }
+/* 小屏将多列内容顺序排列，治理行允许换行，保持表单与趋势可读。 */
 @media (max-width: 760px) { .split, .summary, .inline-form { grid-template-columns: 1fr; }.disposition { grid-template-columns: 1fr; }.identity span { display: none; } }
 @media (max-width: 760px) { .filter-grid { grid-template-columns: 1fr; }.governance-page .row { flex-wrap: wrap; }.governance-page progress { width: 100%; } }
+/* 建议与文档正文区域保留独立视觉提示；正文按换行文本展示并限制可见高度。 */
 .agent-advice { margin-top: 1rem; border-left: .3rem solid #08746e; background: #f8fcfb; }
 .agent-advice h3, .agent-advice h4 { margin-bottom: .35rem; }
 .agent-advice ul { margin-top: .35rem; padding-left: 1.4rem; }
@@ -53,6 +60,7 @@ main { max-width: 78rem; margin: 0 auto; padding: 2.5rem 1.5rem 5rem; }
 .document-content { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflow: auto; border: 1px solid #dbe2e6; padding: 1rem; }
 .summary-finding { display: flex; align-items: center; gap: .6rem; }
 .summary-finding input { width: auto; }
+/* 凭据页面收窄阅读宽度；输入内容生命周期由组件逻辑负责。 */
 .credentials-page { max-width: 54rem; }
 .credentials-page .panel { margin-bottom: 1.5rem; }
 .credentials-page h2 { margin: 0; }

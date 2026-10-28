@@ -1,3 +1,4 @@
+// 会话退出回归：模拟身份服务跳转未完成，保护敏感页面立即卸载的不变量。
 import { fireEvent, render, screen } from '@testing-library/react'
 import { AuthProvider, useAuth } from './AuthContext'
 
@@ -8,11 +9,13 @@ vi.mock('./oidc', () => ({ userManager: {
   events: { addUserLoaded: vi.fn(), addUserUnloaded: vi.fn(), removeUserLoaded: vi.fn(), removeUserUnloaded: vi.fn() },
 } }))
 
+// 用密码框代表已登录敏感页面，退出后整块卸载，便于验证立即清理。
 function SessionView() {
   const { user, logout } = useAuth()
   return user ? <><input aria-label="test secret field" type="password" /><button onClick={() => void logout()}>退出测试</button></> : <p>会话页面已移除</p>
 }
 
+// 验证退出立即卸载已认证页面，不等待身份服务跳转完成。
 it('unmounts authenticated pages immediately, without waiting for OIDC redirect', async () => {
   state.signout.mockImplementation(() => new Promise(() => undefined))
   render(<AuthProvider><SessionView /></AuthProvider>)

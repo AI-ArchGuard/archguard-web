@@ -1,12 +1,15 @@
+// 个人凭据管理页：只显示后端元数据，Key 短暂留在密码输入/请求内存，提交、身份切换和离页时主动清空。
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { CredentialClientError, deleteCredential, getCredentialStatus, saveCredential, type CredentialStatus } from '../api/credentials'
 
+// 按身份键重新挂载凭据表单，使切换用户时清理旧输入与请求状态。
 export function CredentialSettingsPage() {
   const { user } = useAuth()
   return <CredentialSettings key={user?.profile.sub} />
 }
 
+// 只把安全元数据放入 React 状态；密码输入由 ref 管理，避免 Key 随状态持久保留。
 function CredentialSettings() {
   const [status, setStatus] = useState<CredentialStatus>()
   const [error, setError] = useState<CredentialClientError>()
@@ -15,6 +18,7 @@ function CredentialSettings() {
   const [confirmed, setConfirmed] = useState(false)
   const [notice, setNotice] = useState('')
   const [revision, setRevision] = useState(0)
+  // Key 不进入 React state；ref 只连接密码框，解绑、取消和提交时主动抹去输入值。
   const input = useRef<HTMLInputElement | null>(null)
   const pending = useRef<AbortController | null>(null)
   const generation = useRef(0)
@@ -44,6 +48,7 @@ function CredentialSettings() {
     return () => { clear(); window.removeEventListener('pagehide', clear) }
   }, [])
 
+  // 在无写入进行时清空未知旧状态并手动读取元数据，不重放写入。
   function refresh() {
     if (mutating.current) return
     if (input.current) input.current.value = ''
@@ -51,6 +56,7 @@ function CredentialSettings() {
     setRevision(value => value + 1)
   }
 
+  // 立即取出并清空密码输入，再校验/占用同步锁；未知结果撤下旧元数据，要求手动读取确认。
   async function mutate(kind: 'write' | 'delete', event?: FormEvent) {
     event?.preventDefault()
     const key = kind === 'write' ? input.current?.value ?? '' : ''

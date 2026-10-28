@@ -1,5 +1,7 @@
+// 普通页面共享读取状态：以调用方提供的资源键控制加载器身份，提供数据、错误、加载中及手动刷新。
 import { useCallback, useEffect, useState } from 'react'
 
+// 资源键变化时重新加载；此通用 Hook 不取消在途请求，敏感页面另用带代次/取消的状态管理。
 export function useApi<T>(loader: () => Promise<T>, key: string) {
   const [data, setData] = useState<T>()
   const [error, setError] = useState<Error>()

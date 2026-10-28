@@ -1,3 +1,4 @@
+// 只读持续治理页：按分支与规则版本查看基线、历史门禁及例外，分别展示当前 head 和上一 PR 修订差异。
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiClientError } from '../api/client'
@@ -11,6 +12,7 @@ import { agentEntryEnabled } from '../agentEntry'
 const timestamp = (value: string) => new Date(value).toLocaleString()
 const shortSha = (value: string) => value.slice(0, 12)
 
+// 统一区分加载、无权限、普通错误和空记录；无权限时隐藏资源详情。
 function QueryState({ loading, error, retry, empty, children }: { loading: boolean; error?: Error; retry: () => void; empty: boolean; children?: React.ReactNode }) {
   if (loading) return <Loading />
   if (error instanceof ApiClientError && (error.status === 403 || error.status === 404)) return <div className="state error">无权查看此 Project，或资源不存在。</div>
@@ -19,6 +21,7 @@ function QueryState({ loading, error, retry, empty, children }: { loading: boole
   return <>{children}</>
 }
 
+// 以分支及不可变规则版本构造读取范围；PR 当前门禁、相对基线分类与相邻修订比较各有独立查询。
 export function GovernancePage() {
   const { projectId = '', repositoryId = '' } = useParams()
   const root = `/api/v1/projects/${projectId}/repositories/${repositoryId}`
@@ -40,6 +43,7 @@ export function GovernancePage() {
   `current-gate:${root}:${selectedPr?.currentGateEvaluationId ?? ''}`)
   const scope = new URLSearchParams({ targetBranch: branch, ruleSetVersionId })
   const scoped = ruleSetVersionId.length > 0
+  // 相邻 PR 修订差异只解释 PR 内变化；它与基线比较使用不同接口和状态，缺报告不当作零。
   const revisionDelta = useApi(() => scoped && selectedPr?.targetBranch === branch
     ? api<PrRevisionDelta>(`${root}/github/pull-requests/${selectedPr.externalId}/revision-delta?${new URLSearchParams({ ruleSetVersionId })}`)
     : Promise.resolve(undefined), `revision-delta:${root}:${selectedPr?.externalId ?? ''}:${selectedPr?.headSha ?? ''}:${branch}:${ruleSetVersionId}`)
@@ -49,6 +53,7 @@ export function GovernancePage() {
   if (selectedPrId) gateQuery.set('pullRequestId', selectedPrId)
   const history = useApi(() => scoped ? api<GatePage>(`${root}/gate-evaluations?${gateQuery}`) : Promise.resolve(undefined),
     `history:${root}:${gateQuery}`)
+  // 用户明确选中的历史门禁优先，否则显示当前 head 门禁；不从历史列表猜测当前结果。
   const selectedGate = history.data?.items.find((gate) => gate.id === selectedGateId) ?? currentGate.data
   const comparison = useApi(() => selectedGate?.comparisonId
     ? api<Comparison>(`${root}/comparisons/${selectedGate.comparisonId}`) : Promise.resolve(undefined),

@@ -1,13 +1,16 @@
+// 单个 Finding 的合成解释入口：用户显式点击后绑定成功扫描及报告摘要，可附加不可变文档版本。
 import { useState } from 'react'
 import type { Finding, ScanJob } from '../api/types'
 import { AgentRequestView } from './AgentRequestView'
 import { DocumentVersionPicker } from './DocumentVersionPicker'
 import { useAgentRequest } from '../hooks/useAgentRequest'
 
+// 仅在用户点击时创建合成解释，Hook 负责幂等与结果绑定校验。
 export function FindingExplanation({ projectId, job, finding }: { projectId: string; job: ScanJob; finding: Finding }) {
   const { request, error, submitting, create } = useAgentRequest(projectId)
   const [documentVersionIds, setDocumentVersionIds] = useState<string[]>([])
   const [selectingDocuments, setSelectingDocuments] = useState(false)
+  // 只有成功任务且存在报告摘要时才提交，固定单个 Finding 与所选文档版本。
   async function explain() {
     if (job.status !== 'SUCCEEDED' || !job.reportSha256) return
     await create({ purpose: 'FINDING_EXPLANATION', scanJobId: job.id,

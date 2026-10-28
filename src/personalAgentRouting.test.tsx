@@ -1,3 +1,4 @@
+// 个人验收深链接回归：任一开关关闭时无组件挂载及元数据查询。
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { App } from './App'
@@ -17,6 +18,7 @@ vi.mock('./api/personalAgent', async importOriginal => {
 beforeEach(() => vi.clearAllMocks())
 afterEach(() => vi.unstubAllEnvs())
 
+// 逐项关闭独立开关，验证深链接不挂载个人验收组件，也不发起 API 查询。
 it.each([
   [undefined, undefined], ['true', 'false'], ['false', 'true'], ['true', 'TRUE'], ['TRUE', 'true'],
 ])('closed personal deep link does not mount reads, writes or credential controls (%s / %s)', (agent, live) => {

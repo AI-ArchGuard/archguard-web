@@ -1,20 +1,31 @@
+// 个人 Agent 专用边界：消费固定契约，对输入与不可信响应逐项校验；管理操作、历史读取和显式 live 发送分开。
 import type { components as Enablement, operations as EnablementOperations } from './agent-enablement-schema'
 import type { components as Batches, operations as BatchOperations } from './agent-batches-schema'
 import type { AgentRequest } from './agent'
 import type { ProjectMember } from './types'
 import { userManager } from '../auth/oidc'
 
+// 当前 Project 开关与服务器可用性快照。
 export type PersonalSettings = Enablement['schemas']['Settings']
+// 把设置与原始强 ETag 作为同一读取结果传递，后续并发写入必须沿用该 ETag。
 export type PersonalSettingsSnapshot = { value: PersonalSettings; etag: string }
+// 带凭据/价格及有效期绑定的个人风险确认，不等于费用批次批准。
 export type PersonalEnablement = Enablement['schemas']['Enablement']
+// 只允许当前 0.4.0 确认请求；Schema 的 $defs 是描述信息，不进入 JSON 请求正文。
 // $defs describes the fixed schema, not a field accepted in the JSON request body.
 export type PersonalAcknowledgementInput = Omit<Extract<EnablementOperations['acknowledgePersonalAgentRisk']['requestBody']['content']['application/json'], { schemaVersion: '0.4.0' }>, '$defs'>
+// 费用批次批准请求限定为两次调用，模板与清单必须明确。
 export type PersonalBatchInput = Extract<BatchOperations['approvePersonalSyntheticBatch']['requestBody']['content']['application/json'], { maxRequests: 2 }>
+// 既有批次的批准、清单、额度和撤销元数据。
 export type PersonalBatch = Batches['schemas']['Batch']
+// 服务器提供的批次槽位、尝试和费用执行事实；本身不授予发送权限。
 export type PersonalBatchExecution = Batches['schemas']['BatchExecution']
+// 批次的两个用途：解释与摘要，按固定顺序串行执行。
 export type PersonalPurpose = Batches['schemas']['TemplateExecution']['purpose']
+// 模板预览的版本、数量和清单摘要，用于后续明确批准。
 export type PersonalBatchPreview = Batches['schemas']['Preview']
 
+// 个人 Agent 边界的安全错误类型：状态映射为固定操作建议，不保留不可信正文。
 export class PersonalAgentClientError extends Error {
   public readonly traceId: string
   constructor(public readonly status: number, traceId = '') {
@@ -45,10 +56,14 @@ const sources: Record<string, string> = {
 }
 const unknownRisks = ['PROCESSING_REGION', 'STORAGE_REGION', 'TRAINING', 'HUMAN_REVIEW', 'LOG_RETENTION', 'CACHE_ISOLATION', 'CACHE_RETENTION', 'SUBPROCESSORS']
 const revocations = ['OWNER_REVOKED', 'SCOPE_CHANGED', 'POLICY_CHANGED', 'MODEL_CHANGED', 'PRICE_CHANGED', 'SECRET_CHECK_INVALID', 'NETWORK_CHECK_INVALID']
+// 待逐项校验的 JSON 对象；unknown 字段尚未被视为可信业务数据。
 type JsonObject = Record<string, unknown>
+// 保留解析值、原始正文和响应头，支持 ETag 与 int64 原始文本交叉核对。
 type Reply = { value: unknown; source: string; headers: Headers }
 
+// 所有专用校验失败都转为固定客户端错误，未知响应默认不被接受。
 function requireValue(condition: unknown, status = 0): asserts condition { if (!condition) throw new PersonalAgentClientError(status) }
+// 校验对象必填字段及完整白名单，防止类型断言掩盖多余或缺失的字段。
 function object(value: unknown, required: string[], optional: string[] = []): JsonObject {
   requireValue(value !== null && typeof value === 'object' && !Array.isArray(value))
   const data = value as JsonObject, allowed = [...required, ...optional]
@@ -58,19 +73,24 @@ function object(value: unknown, required: string[], optional: string[] = []): Js
 function isUuid(value: unknown): value is string { return typeof value === 'string' && uuid.test(value) }
 function integer(value: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max }
 function text(value: unknown, max = 128): value is string { return typeof value === 'string' && value.length > 0 && value.length <= max }
+// 验证带时区的时间文本及可解析性，供批准、费用和历史响应使用。
 function date(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value))
 }
+// 检查 UUID 列表数量与唯一性，防止重复模板或重复选择。
 function ids(value: unknown, min: number, max: number): value is string[] {
   return Array.isArray(value) && value.length >= min && value.length <= max && value.every(isUuid) && new Set(value).size === value.length
 }
 function inList(value: unknown, allowed: string[]): value is string { return typeof value === 'string' && allowed.includes(value) }
+// 将出站参数校验失败统一标记为输入错误，网络调用前拒绝。
 function input<T>(action: () => T): T {
   try { return action() } catch { throw new PersonalAgentClientError(400) }
 }
+// 先校验 Project UUID 再构造固定同源根路径，拒绝路径注入。
 function root(project: string) { requireValue(isUuid(project), 400); return `/api/v1/projects/${project}/agent` }
 function id(value: string) { requireValue(isUuid(value), 400); return value }
 
+// 整个操作共享十五秒期限，覆盖认证、请求、流式正文及角色的每一页；无自动重试。
 // One deadline includes authentication, headers, streamed body and every role page. No retry layer.
 async function deadline<T>(signal: AbortSignal, action: (bounded: AbortSignal) => Promise<T>): Promise<T> {
   const own = new AbortController(), bounded = AbortSignal.any([signal, own.signal])
@@ -79,6 +99,7 @@ async function deadline<T>(signal: AbortSignal, action: (bounded: AbortSignal) =
   catch (error) { if (error instanceof PersonalAgentClientError) throw error; throw new PersonalAgentClientError(0) }
   finally { globalThis.clearTimeout(timer); own.abort() }
 }
+// 让认证等待或忽略取消的传输也受 AbortSignal 约束，并在完成后移除监听。
 async function wait<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted()
   let rejectAbort: (() => void) | undefined
@@ -86,7 +107,9 @@ async function wait<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   try { const value = await Promise.race([promise, aborted]); signal.throwIfAborted(); return value }
   finally { if (rejectAbort) signal.removeEventListener('abort', rejectAbort) }
 }
+// 丢弃无需信任或展示的响应体；取消流失败不转而读取错误原文。
 function discard(body: ReadableStream<Uint8Array> | null) { if (body) void body.cancel().catch(() => {}) }
+// 序列化有界输入，发送 no-store/拒绝重定向的同源请求；按字节读取有限 JSON，再交给专用校验器。
 async function request(path: string, signal: AbortSignal, method: 'GET' | 'PUT' | 'POST' = 'GET',
   payload?: unknown, expectedStatus = 200, limit = 32768, extraHeaders?: Record<string, string>): Promise<Reply> {
   const body = payload === undefined ? undefined : JSON.stringify(payload)
@@ -97,6 +120,7 @@ async function request(path: string, signal: AbortSignal, method: 'GET' | 'PUT' 
   const response = await wait(fetch(path, { method, signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error',
     referrerPolicy: 'no-referrer', headers: { Authorization: `Bearer ${user.access_token}`, ...(body ? { 'Content-Type': 'application/json' } : {}), ...extraHeaders },
     ...(body === undefined ? {} : { body }) }), signal)
+  // 即使错误正文可能回显敏感输入，也只取消正文并保留经过校验的头部追踪标识。
   if (!response.ok) {
     discard(response.body)
     throw new PersonalAgentClientError(response.status, response.headers.get('X-Request-Id') ?? '')
@@ -119,16 +143,19 @@ async function request(path: string, signal: AbortSignal, method: 'GET' | 'PUT' 
   return { value: JSON.parse(source) as unknown, source, headers: response.headers }
 }
 
+// 只接受 int64 范围内的原始强 ETag，保留十进制文本以避免 JavaScript 数值舍入。
 function strongEtag(value: string): string {
   const match = /^"(0|[1-9][0-9]{0,18})"$/.exec(value)
   requireValue(match && BigInt(match[1]) <= 9223372036854775807n)
   return match[1]
 }
+// 以原始 JSON 数字文本对照 ETag，并核对设置状态组合；写入继续沿用原始 ETag。
 function readSettings(reply: Reply): PersonalSettingsSnapshot {
   const data = object(reply.value, ['enabled', 'revision', 'enablementId', 'modelCallsAvailable', 'unavailableReason'])
   const etag = reply.headers.get('ETag') ?? '', revision = strongEtag(etag)
   // JSON.parse rounds large int64 values. Compare the original numeric token to the opaque ETag,
   // retain that ETag unchanged, and never reconstruct If-Match from the rounded display value.
+  // revision 原始数字文本须与强 ETag 一致；显示用 number 即使舍入，也绝不用于重建 If-Match。
   const tokens = [...reply.source.matchAll(/"revision"\s*:\s*(0|[1-9][0-9]*)(?=\s*[,}])/g)]
   requireValue(tokens.length === 1 && tokens[0][1] === revision && data.revision === Number(revision)
     && typeof data.enabled === 'boolean' && typeof data.modelCallsAvailable === 'boolean'
@@ -137,6 +164,7 @@ function readSettings(reply: Reply): PersonalSettingsSnapshot {
     && (data.modelCallsAvailable ? data.enabled && data.unavailableReason === null : inList(data.unavailableReason, unavailableReasons)))
   return { value: data as PersonalSettings, etag }
 }
+// 验证 Project/记录身份、凭据版本、时间、模型与价格绑定，历史记录保留自身撤销状态。
 function readEnablement(value: unknown, project: string, expectedId?: string): PersonalEnablement {
   const data = object(value, ['id', 'projectId', 'approvedBy', 'approvedAt', 'expiresAt', 'credentialVersion', 'modelAlias',
     'priceCatalogVersion', 'priceCatalogExpiresAt', 'dataScope', 'revoked', 'revokedAt'])
@@ -147,6 +175,7 @@ function readEnablement(value: unknown, project: string, expectedId?: string): P
     && typeof data.revoked === 'boolean' && (data.revoked ? date(data.revokedAt) : data.revokedAt === null))
   return data as PersonalEnablement
 }
+// 核对批次身份及所属 Project、两次额度、费用范围、清单摘要与到期时间。
 function readBatch(value: unknown, project: string, expectedId?: string): PersonalBatch {
   const data = object(value, ['id', 'projectId', 'enablementId', 'approvedBy', 'approvedAt', 'manifestSha256', 'expiresAt', 'maxRequests', 'maxCostMicrousd', 'revoked'])
   requireValue(isUuid(data.id) && (!expectedId || data.id === expectedId) && data.projectId === project && isUuid(data.enablementId)
@@ -155,6 +184,7 @@ function readBatch(value: unknown, project: string, expectedId?: string): Person
     && integer(data.maxCostMicrousd, 632746, 700000) && typeof data.revoked === 'boolean')
   return data as PersonalBatch
 }
+// 核对当前确认契约的完整字段、1017 精确映射和固定来源；实际核对记录由操作者提供。
 function validateRisk(value: PersonalAcknowledgementInput) {
   const data = object(value, ['schemaVersion', 'scope', 'accountRef', 'deploymentRef', 'expiresAt', 'sources', 'unknowns', 'riskAccepted',
     'modelAlias', 'mappingSnapshot', 'allowedResponseModels', 'priceCatalogVersion', 'priceCatalogExpiresAt', 'secretCheckRef',
@@ -180,10 +210,12 @@ function validateRisk(value: PersonalAcknowledgementInput) {
   requireValue(['TERMS', 'PRIVACY', 'CACHE', 'MODEL_PRICE'].every(kind => kinds.has(kind)))
 }
 
+// 读取当前设置及原始 ETag；此操作不会开启 Project 或调用模型。
 export async function getPersonalSettings(project: string, signal: AbortSignal): Promise<PersonalSettingsSnapshot> {
   const path = `${root(project)}/settings`
   return deadline(signal, async bounded => readSettings(await request(path, bounded)))
 }
+// 验证设置输入后以原始 If-Match 写入，检查回包与意图一致；版本冲突交由页面人工恢复。
 export async function updatePersonalSettings(project: string, value: Enablement['schemas']['SettingsUpdate'], etag: string, signal: AbortSignal): Promise<PersonalSettingsSnapshot> {
   const path = `${root(project)}/settings`
   input(() => {
@@ -196,10 +228,12 @@ export async function updatePersonalSettings(project: string, value: Enablement[
     return read
   })
 }
+// 按明确 ID 读取并校验同 Project 的风险确认，不自动选择或升级历史确认。
 export async function getPersonalEnablement(project: string, enablementId: string, signal: AbortSignal): Promise<PersonalEnablement> {
   const path = `${root(project)}/enablements/${id(enablementId)}`
   return deadline(signal, async bounded => readEnablement((await request(path, bounded)).value, project, enablementId))
 }
+// 显式保存已校验的风险确认，核对返回凭据版本；此操作不是批次费用批准或模型发送。
 export async function acknowledgePersonalRisk(project: string, value: PersonalAcknowledgementInput, signal: AbortSignal): Promise<PersonalEnablement> {
   const path = `${root(project)}/enablements`; input(() => validateRisk(value))
   return deadline(signal, async bounded => {
@@ -207,6 +241,7 @@ export async function acknowledgePersonalRisk(project: string, value: PersonalAc
     requireValue(read.credentialVersion === value.credentialVersion && !read.revoked); return read
   })
 }
+// 显式撤销指定确认，并要求响应已撤销；无法撤回已经发送的数据。
 export async function revokePersonalEnablement(project: string, enablementId: string, signal: AbortSignal): Promise<PersonalEnablement> {
   const path = `${root(project)}/enablements/${id(enablementId)}/revoke`
   return deadline(signal, async bounded => {
@@ -214,6 +249,7 @@ export async function revokePersonalEnablement(project: string, enablementId: st
     requireValue(read.revoked); return read
   })
 }
+// 以两个不重复模板 ID 预览清单，只接收固定版本、数量及 SHA-256 摘要。
 export async function previewPersonalBatch(project: string, templateIds: string[], signal: AbortSignal): Promise<PersonalBatchPreview> {
   const path = `${root(project)}/batches/preview`; requireValue(ids(templateIds, 2, 2), 400)
   return deadline(signal, async bounded => {
@@ -222,6 +258,7 @@ export async function previewPersonalBatch(project: string, templateIds: string[
     return data as PersonalBatchPreview
   })
 }
+// 核对两次明确费用批准与清单绑定后创建批次；成功响应必须对应所提交确认与预算。
 export async function approvePersonalBatch(project: string, value: PersonalBatchInput, signal: AbortSignal): Promise<PersonalBatch> {
   const path = `${root(project)}/batches`
   input(() => {
@@ -236,10 +273,12 @@ export async function approvePersonalBatch(project: string, value: PersonalBatch
       && read.maxCostMicrousd === value.maxCostMicrousd && !read.revoked); return read
   })
 }
+// 按明确批次 ID 读取历史，校验 Project 与记录身份。
 export async function getPersonalBatch(project: string, batchId: string, signal: AbortSignal): Promise<PersonalBatch> {
   const path = `${root(project)}/batches/${id(batchId)}`
   return deadline(signal, async bounded => readBatch((await request(path, bounded)).value, project, batchId))
 }
+// 请求停止指定批次后确认撤销状态；历史费用和已发送请求不会因此回退。
 export async function revokePersonalBatch(project: string, batchId: string, signal: AbortSignal): Promise<PersonalBatch> {
   const path = `${root(project)}/batches/${id(batchId)}/revoke`
   return deadline(signal, async bounded => {
@@ -247,6 +286,7 @@ export async function revokePersonalBatch(project: string, batchId: string, sign
   })
 }
 
+// 交叉核对两个模板、固定请求槽位、尝试记录和聚合费用；未知费用继续占用预留，结算不等于结果成功。
 function readExecution(value: unknown, project: string, batchId: string): PersonalBatchExecution {
   const data = object(value, ['schemaVersion', 'observedAt', 'batch', 'costPolicyVersion', 'accounting', 'stop', 'templates'])
   const batch = readBatch(data.batch, project, batchId), accounting = object(data.accounting, ['attemptCount', 'reservedMicrousd', 'spentMicrousd'])
@@ -260,6 +300,7 @@ function readExecution(value: unknown, project: string, batchId: string): Person
     requireValue(isUuid(item.templateRequestId) && !templateIds.has(item.templateRequestId)
       && item.purpose === (index === 0 ? 'FINDING_EXPLANATION' : 'PR_SUMMARY'))
     templateIds.add(item.templateRequestId)
+    // 未分配请求与尚无费用尝试是独立事实，不能由空值推导“可重新发送”。
     if (item.request === null) { requireValue(item.attempt === null); continue }
     const r = object(item.request, ['id', 'state', 'failureCode', 'traceId', 'createdAt', 'updatedAt'])
     requireValue(isUuid(r.id) && r.id !== item.templateRequestId && !requestIds.has(r.id) && inList(r.state, requestStates)
@@ -273,6 +314,7 @@ function readExecution(value: unknown, project: string, batchId: string): Person
     attemptIds.add(a.attemptId); count++
     if (a.outcome === null) { requireValue(r.state !== 'SUCCEEDED'); reserved += reservation; continue }
     const o = object(a.outcome, ['state', 'actualMicrousd', 'usage', 'recordedAt']); requireValue(date(o.recordedAt))
+    // 未知费用不视作零或退款，继续计入保守预留，成功态也不能携带未知结算。
     if (o.state === 'UNKNOWN') {
       requireValue(o.actualMicrousd === null && o.usage === null && r.state !== 'SUCCEEDED'); reserved += reservation
     } else {
@@ -284,6 +326,7 @@ function readExecution(value: unknown, project: string, batchId: string): Person
       spent += o.actualMicrousd
     }
   }
+  // 从逐项尝试重算费用并对照汇总，避免回包凭空制造剩余调用或预算。
   requireValue(accounting.attemptCount === count && accounting.reservedMicrousd === reserved && accounting.spentMicrousd === spent)
   if (data.stop !== null) {
     const stop = object(data.stop, ['requestId', 'code', 'stoppedAt'])
@@ -291,11 +334,13 @@ function readExecution(value: unknown, project: string, batchId: string): Person
   }
   return data as PersonalBatchExecution
 }
+// 读取服务器批次执行快照，再交由费用/槽位一致性校验器验证。
 export async function getPersonalBatchExecution(project: string, batchId: string, signal: AbortSignal): Promise<PersonalBatchExecution> {
   const path = `${root(project)}/batches/${id(batchId)}/execution`
   return deadline(signal, async bounded => readExecution((await request(path, bounded)).value, project, batchId))
 }
 
+// 校验建议的范围、绑定版本、用途、异步状态及结果/失败结构，不能仅信任 TypeScript 静态类型。
 function readRequest(value: unknown, project: string, expectedId?: string, liveOnly = false): AgentRequest {
   const data = object(value, ['id', 'projectId', 'requesterId', 'traceId', 'purpose', 'state', 'bindings', 'result', 'failure', 'usage', 'createdAt', 'updatedAt'])
   requireValue(isUuid(data.id) && (!expectedId || data.id === expectedId) && data.projectId === project && isUuid(data.requesterId)
@@ -332,6 +377,7 @@ function readRequest(value: unknown, project: string, expectedId?: string, liveO
   }
   return data as AgentRequest
 }
+// 逐项验证建议字段和引用；Evidence 必须匹配扫描/报告，文档必须匹配选定不可变版本摘要。
 function readResult(value: unknown, project: string, bindings: JsonObject, documents: Map<string, string>) {
   const result = object(value, ['conclusion', 'ruleBasis', 'claims', 'suggestions', 'citations', 'evidenceCoverage'])
   const textList = (items: unknown) => Array.isArray(items) && items.length <= 100 && items.every(item => text(item, 16000))
@@ -355,17 +401,21 @@ function readResult(value: unknown, project: string, bindings: JsonObject, docum
       && sha.test(c.fragmentSha256) && c.scanJobId === null && c.reportSha256 === null && c.evidenceId === null)
   }
 }
+// 只读取一个明确请求并核对身份，用于恢复 synthetic 模板或既有结果，不触发发送。
 export async function getPersonalRequest(project: string, requestId: string, signal: AbortSignal): Promise<AgentRequest> {
   const path = `${root(project)}/requests/${id(requestId)}`
   return deadline(signal, async bounded => readRequest((await request(path, bounded, 'GET', undefined, 200, 131072)).value, project, requestId))
 }
+// 显式发送指定批次/模板，幂等键由这两个固定 ID 决定；失败、终态或再次调用都不换键。
 export async function runPersonalRequest(project: string, batchId: string, templateRequestId: string, signal: AbortSignal): Promise<AgentRequest> {
   const path = `${root(project)}/live-requests`; id(batchId); id(templateRequestId)
   // Stable across remounts and terminal replies. An explicit invocation is never a new retry key.
+  // 幂等身份固定在批次与模板，不能通过终态、超时或人工再次点击换键。
   const key = `personal:${batchId}:${templateRequestId}`
   return deadline(signal, async bounded => readRequest((await request(path, bounded, 'POST', { batchId, templateRequestId }, 202, 131072,
     { 'Idempotency-Key': key })).value, project, undefined, true))
 }
+// 在同一取消/超时边界内有界分页读取成员，未命中返回 null；不调用普通页面的无取消角色助手。
 export async function getPersonalRole(project: string, actor: string, signal: AbortSignal): Promise<ProjectMember['role'] | null> {
   root(project); id(actor)
   return deadline(signal, async bounded => {

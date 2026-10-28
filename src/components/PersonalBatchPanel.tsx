@@ -1,8 +1,10 @@
+// 合成批次管理面板：明确读取批次 ID、核对两个既有模板并预览清单，单独批准/撤销费用批次。
 import { useEffect, useRef, useState } from 'react'
 import { approvePersonalBatch, getPersonalBatch, getPersonalRequest, PersonalAgentClientError, previewPersonalBatch,
   revokePersonalBatch, type PersonalBatch, type PersonalBatchPreview, type PersonalEnablement } from '../api/personalAgent'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+// 批次管理只操作明确 ID；预览/费用批准不会自动发送模型请求，Viewer 保留历史读取。
 export function PersonalBatchPanel({ projectId, enablement, canManage, disabled, onBatch, onDenied }: {
   projectId: string; enablement?: PersonalEnablement; canManage: boolean; disabled: boolean
   onBatch: (value: PersonalBatch | undefined) => void; onDenied: () => void
@@ -15,6 +17,7 @@ export function PersonalBatchPanel({ projectId, enablement, canManage, disabled,
   const generation = useRef(0), pending = useRef<AbortController | null>(null), working = useRef(false)
   useEffect(() => () => { ++generation.current; pending.current?.abort() }, [])
   const locked = disabled || busy
+  // 同步占用工作锁并取消旧请求，忽略卸载后的响应；错误时撤下预览/批次，权限错误上报父页。
   async function operate<T>(action: (signal: AbortSignal) => Promise<T>, accept: (value: T) => void) {
     if (working.current || disabled) return
     working.current = true; setBusy(true); setError(undefined)
@@ -29,8 +32,11 @@ export function PersonalBatchPanel({ projectId, enablement, canManage, disabled,
       if ([401, 403, 404].includes(safe.status)) onDenied()
     } finally { working.current = false; if (current === generation.current) setBusy(false) }
   }
+  // 模板变化使旧预览、批次及费用勾选失效，防止沿用旧选择。
   function invalidate() { setPreview(undefined); setConsent(false); setLoaded(undefined); onBatch(undefined) }
+  // 接受服务器确认的批次并通知父页，费用勾选始终复位。
   function receive(value: PersonalBatch) { setLoaded(value); setBatchId(value.id); setConsent(false); onBatch(value) }
+  // 逐一核对同 Project、指定用途和终态 synthetic 模板，再向服务端请求清单摘要。
   function verify() {
     if (!uuid.test(explanation) || !uuid.test(summary) || explanation === summary) { setError(new PersonalAgentClientError(400)); return }
     setPreview(undefined); setConsent(false)

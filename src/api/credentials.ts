@@ -1,11 +1,15 @@
+// 只写凭据客户端：固定同源地址、取消与元数据上限，浏览器只接收配置状态；写入不验证 Key 或调用模型。
 import { userManager } from '../auth/oidc'
 import type { components } from './agent-credentials-schema'
 
+// 凭据的只读元数据类型，不包含 Key。
 export type CredentialStatus = components['schemas']['CredentialStatus']
+// 仅用于写入请求的契约类型；不作为读取返回值或页面状态。
 type WriteCredential = components['schemas']['WriteCredentialRequest']
 const route = '/api/v1/agent/credentials/deepseek'
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
+// 凭据边界的安全错误类型：只暴露固定文案、HTTP 状态和符合格式的 traceId。
 export class CredentialClientError extends Error {
   public readonly traceId: string
   constructor(public readonly status: number, traceId = '') {
@@ -17,6 +21,7 @@ export class CredentialClientError extends Error {
   }
 }
 
+// 只接受三个固定元数据字段与一致的配置状态，拒绝多余字段、无效版本和时间。
 function metadata(value: unknown): CredentialStatus {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new CredentialClientError(0)
   const data = value as Record<string, unknown>
@@ -33,6 +38,7 @@ function metadata(value: unknown): CredentialStatus {
   throw new CredentialClientError(0)
 }
 
+// 使用调用方取消与十五秒超时信号发送固定路径请求；响应流最多一 KiB，不解析错误正文。
 async function request(method: 'GET' | 'PUT' | 'DELETE', signal: AbortSignal, payload?: WriteCredential): Promise<CredentialStatus> {
   try {
     const boundedSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)])
@@ -51,6 +57,7 @@ async function request(method: 'GET' | 'PUT' | 'DELETE', signal: AbortSignal, pa
     if (response.status !== 200 || response.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase() !== 'application/json' || !response.body) {
       await response.body?.cancel(); throw new CredentialClientError(0)
     }
+    // 按传输字节累计上限，完整读取后才解析并校验；部分正文不会成为可展示状态。
     const reader = response.body.getReader()
     const chunks: Uint8Array[] = []; let size = 0
     try {
@@ -71,6 +78,7 @@ async function request(method: 'GET' | 'PUT' | 'DELETE', signal: AbortSignal, pa
   }
 }
 
+// 读取只返回配置元数据；添加/替换和删除分别调用同一固定路由的 PUT/DELETE。
 export const getCredentialStatus = (signal: AbortSignal) => request('GET', signal)
 export const saveCredential = (apiKey: string, signal: AbortSignal) => request('PUT', signal, { apiKey })
 export const deleteCredential = (signal: AbortSignal) => request('DELETE', signal)

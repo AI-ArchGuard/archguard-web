@@ -1,3 +1,4 @@
+// 扫描结果页：读取任务与 Finding、按需展示 Evidence，并提交带版本的人工处置；建议入口不改变门禁结论。
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
@@ -9,14 +10,18 @@ import { agentEntryEnabled } from '../agentEntry'
 
 const terminal = new Set(['SUCCEEDED', 'FAILED', 'CANCELLED'])
 
+// 等待任务终态前定时刷新状态；取消、证据读取与处置都是独立的显式操作。
 export function ScanResultPage() {
   const { projectId = '', jobId = '' } = useParams()
   const job = useApi(() => api<ScanJob>(`/api/v1/projects/${projectId}/scan-jobs/${jobId}`), `job:${projectId}:${jobId}`)
   const findings = useApi(() => api<Finding[]>(`/api/v1/projects/${projectId}/scan-jobs/${jobId}/findings?size=100`), `findings:${projectId}:${jobId}`)
   const [evidence, setEvidence] = useState<Evidence>(); const [reason, setReason] = useState(''); const [next, setNext] = useState<FindingDisposition>('FALSE_POSITIVE')
   useEffect(() => { if (job.data && !terminal.has(job.data.status)) { const timer = window.setInterval(job.reload, 2000); return () => window.clearInterval(timer) } }, [job.data, job.reload])
+  // 申请后台取消扫描并刷新状态；实际取消结果由任务状态返回。
   async function cancel() { await api(`/api/v1/projects/${projectId}/scan-jobs/${jobId}/cancel`, { method: 'POST' }); job.reload() }
+  // 按当前 Project/ScanJob 路径读取所点选的 Evidence。
   async function showEvidence(id: string) { setEvidence(await api(`/api/v1/projects/${projectId}/scan-jobs/${jobId}/evidences/${id}`)) }
+  // 带 Finding 当前版本与处置原因提交更新，交由后端并发检查，成功后刷新列表。
   async function dispose(finding: Finding) { await api(`/api/v1/projects/${projectId}/scan-jobs/${jobId}/findings/${finding.id}/disposition`, { method: 'PUT', body: JSON.stringify({ disposition: next, reason, version: finding.version }) }); setReason(''); findings.reload() }
   if (job.loading) return <main><Loading /></main>; if (job.error) return <main><Failure error={job.error} retry={job.reload} /></main>
   return <main><div className="page-head"><div><p className="eyebrow mono">{jobId}</p><h1>Scan Result</h1></div><Link to={`/projects/${projectId}`}>返回 Project</Link></div>

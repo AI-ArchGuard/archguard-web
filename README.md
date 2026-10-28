@@ -6,6 +6,8 @@ ArchGuard 治理平台的独立 React 客户端。提供 OIDC Authorization Code
 
 ## 安全边界
 
+学习代码可从[Web 中文阅读指南](docs/code-reading/web.zh-CN.md)进入，按路由、身份、客户端、Hook、展示和测试阅读。手写源码补中文说明，生成类型、固定契约和数据保持原样。
+
 阶段 4F 提供 Project 文档管理、单个 Finding 的按需解释和 Maintainer 显式选择 Finding 的 PR 摘要。请求绑定确切扫描/报告、已验证 PR 修订和不可变文档版本；页面显示异步状态、失败原因、证据覆盖、版本及 traceId。Evidence 和文档引用按当前 Project 权限重新读取，摘要和解释始终作为需人工复核的建议。
 
 生产模型默认关闭；当前只支持已验收的合成/不可用路径。真实 DeepSeek 外发继续受 Docs ADR-0011 的独立审批关卡约束。

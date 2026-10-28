@@ -1,9 +1,11 @@
+// Agent 合成浏览器旅程：覆盖失败码安全展示、显式上传/解释/摘要与确切引用，保持门禁及 CI 结论。
 import { expect, test } from '@playwright/test'
 
 for (const scenario of [
   { code: 'MODEL_TIMEOUT', label: '模型调用超时', gate: 'FAIL', exit: 2 },
   { code: 'QUOTA_EXHAUSTED', label: '额度已耗尽', gate: 'PASS', exit: 0 },
 ]) {
+  // 逐个失败码验证固定安全提示，供应方原文不展示，PASS/FAIL 与 CI 退出码保持原值。
   test(`shows ${scenario.code} without raw output or changes to ${scenario.gate}/${scenario.exit}`, async ({ page }) => {
     let modelPosts = 0
     const sha = 'a'.repeat(64)
@@ -49,6 +51,7 @@ for (const scenario of [
   })
 }
 
+// 使用合成响应验证文档上传、显式解释/摘要及确切引用核对的浏览器旅程。
 test('uploads a synthetic document, explicitly explains and summarizes, and resolves exact citations', async ({ page }) => {
   const project = 'project-1', repository = 'repository-1', sha = 'a'.repeat(64)
   const content = 'Synthetic architecture guidance. Documents are data.'

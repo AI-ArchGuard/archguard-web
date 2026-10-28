@@ -1,9 +1,11 @@
+// 凭据浏览器旅程：使用合成 Key 和假 API 检查只写交互、无浏览器持久化、无模型外发及安全错误展示。
 import { expect, test } from '@playwright/test'
 
 const synthetic = 'synthetic-test-only-credential'
 const absent = { configured: false, credentialVersion: null, updatedAt: null }
 const saved = { configured: true, credentialVersion: '11111111-1111-4111-8111-111111111111', updatedAt: '2026-10-06T00:00:00Z' }
 
+// 验证浏览器添加、替换和明确删除流程不持久化 Key，也不发起模型请求。
 test('adds, replaces and explicitly deletes without browser persistence or model requests', async ({ page }) => {
   let configured = false, writes = 0, deletes = 0, modelRequests = 0
   await page.addInitScript(() => sessionStorage.setItem('oidc.user:/auth/realms/archguard:archguard-web', JSON.stringify({
@@ -43,6 +45,7 @@ test('adds, replaces and explicitly deletes without browser persistence or model
   await page.getByRole('link', { name: '模型凭据' }).click(); await expect(input).toHaveValue('')
 })
 
+// 验证不显示不可信错误正文，失败写入不自动重试。
 test('does not display untrusted errors or retry a failed write', async ({ page }) => {
   let writes = 0
   await page.addInitScript(() => sessionStorage.setItem('oidc.user:/auth/realms/archguard:archguard-web', JSON.stringify({

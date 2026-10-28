@@ -1,3 +1,4 @@
+// 凭据客户端安全回归：假认证与 fetch 覆盖固定路由、无存储、元数据白名单、取消和错误脱敏。
 import { CredentialClientError, deleteCredential, getCredentialStatus, saveCredential } from './credentials'
 
 const auth = vi.hoisted(() => ({ getUser: vi.fn() }))
@@ -9,6 +10,7 @@ const signal = () => new AbortController().signal
 beforeEach(() => auth.getUser.mockResolvedValue({ expired: false, access_token: 'synthetic-test-token' }))
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
+// 验证凭据操作仅访问固定同源 no-store 路由，输入不进入浏览器存储。
 it('uses only a fixed same-origin no-store endpoint and never persists input', async () => {
   const local = vi.spyOn(window.localStorage, 'setItem')
   const session = vi.spyOn(window.sessionStorage, 'setItem')
@@ -25,6 +27,7 @@ it('uses only a fixed same-origin no-store endpoint and never persists input', a
   expect(local).not.toHaveBeenCalled(); expect(session).not.toHaveBeenCalled()
 })
 
+// 验证删除无 Key 正文，状态读取仅返回配置元数据。
 it('deletes without a credential body and status reads only metadata', async () => {
   const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(absent), { headers: { 'Content-Type': 'application/json' } })))
   vi.stubGlobal('fetch', fetchMock)
@@ -34,6 +37,7 @@ it('deletes without a credential body and status reads only metadata', async () 
   expect(fetchMock.mock.calls.map(call => call[1].method)).toEqual(['DELETE', 'GET'])
 })
 
+// 验证不解析不可信错误正文、过滤追踪标识且不自动重试。
 it('discards untrusted error text and trace headers and does not retry', async () => {
   const response = new Response(JSON.stringify({ message: synthetic, rejectedValue: synthetic }),
     { status: 503, headers: { 'Content-Type': 'application/json', 'X-Request-Id': synthetic } })
@@ -48,6 +52,7 @@ it('discards untrusted error text and trace headers and does not retry', async (
   expect(parse).not.toHaveBeenCalled(); expect(fetchMock).toHaveBeenCalledTimes(1)
 })
 
+// 逐项拒绝多余字段及不一致元数据，避免把不可信回包当作安全状态。
 it.each([
   { ...saved, apiKey: synthetic }, { ...saved, configured: 'true' }, { ...absent, updatedAt: synthetic },
   { ...saved, credentialVersion: synthetic }, { ...saved, updatedAt: synthetic },
@@ -56,6 +61,7 @@ it.each([
   await expect(getCredentialStatus(signal())).rejects.toThrow('操作未确认完成')
 })
 
+// 验证响应大小、网络错误脱敏，以及取消/过期会话在发请求前失败。
 it('bounds metadata, sanitizes network errors and sends no request after abort or expiry', async () => {
   const fetchMock = vi.fn().mockResolvedValue(new Response('a'.repeat(1025), { headers: { 'Content-Type': 'application/json' } }))
   vi.stubGlobal('fetch', fetchMock)

@@ -1,3 +1,4 @@
+// 个人验收协调页回归：假 owner/角色/元数据验证准入、ETag 冲突、到期、取消和全页失权清理。
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { CredentialClientError } from '../api/credentials'
@@ -38,18 +39,21 @@ beforeEach(() => {
   state.enablement.mockResolvedValue(acknowledgement)
 })
 afterEach(() => vi.useRealTimers())
+// 挂载个人验收深链接并返回渲染句柄，供切换/卸载场景检查取消行为。
 function show() {
   return render(<MemoryRouter initialEntries={[`/projects/${project}/agent/personal`]}><Routes>
     <Route path="/projects/:projectId/agent/personal" element={<PersonalAgentPage />} />
   </Routes></MemoryRouter>)
 }
 
+// 验证入口关闭时无任何 API 工作。
 it('keeps the disabled entry completely free of API work', () => {
   state.enabled = false; show()
   expect(screen.getByText(/个人真实验收入口已关闭/)).toBeInTheDocument()
   expect(state.settings).not.toHaveBeenCalled(); expect(state.key).not.toHaveBeenCalled(); expect(state.role).not.toHaveBeenCalled()
 })
 
+// 验证 owner 且 Maintainer 只读取元数据，不增加 Key 表单或调用模型。
 it('loads metadata for an owner Maintainer without adding a second Key form or calling models', async () => {
   show(); await screen.findByRole('button', { name: '创建风险确认（无模型调用）' })
   expect(screen.getByRole('link', { name: '管理已加密的 API Key' })).toHaveAttribute('href', '/settings/model-credentials')
@@ -58,6 +62,7 @@ it('loads metadata for an owner Maintainer without adding a second Key form or c
   expect(state.acknowledge).not.toHaveBeenCalled(); expect(state.approve).not.toHaveBeenCalled(); expect(state.run).not.toHaveBeenCalled()
 })
 
+// 验证 Viewer 只有读取控件，没有写控件。
 it('shows read controls but hides mutation controls for a Viewer', async () => {
   state.role.mockResolvedValue('VIEWER'); show()
   await screen.findByRole('button', { name: '读取已有批次' })
@@ -66,12 +71,14 @@ it('shows read controls but hides mutation controls for a Viewer', async () => {
   expect(state.run).not.toHaveBeenCalled()
 })
 
+// 验证仅有 Maintainer 身份不能获得部署所有者的写权限。
 it('does not grant write controls merely because the actor is a Maintainer', async () => {
   state.key.mockRejectedValue(new CredentialClientError(403)); show()
   await screen.findByRole('button', { name: '读取已有批次' })
   expect(screen.queryByRole('button', { name: '创建风险确认（无模型调用）' })).not.toBeInTheDocument()
 })
 
+// 验证原样沿用强 ETag，412 后不覆盖也不重试。
 it('uses the exact strong ETag and never overwrites or retries a 412', async () => {
   state.update.mockRejectedValue(new PersonalAgentClientError(412)); show()
   await screen.findByRole('button', { name: '关闭 Project 模型入口' })
@@ -83,6 +90,7 @@ it('uses the exact strong ETag and never overwrites or retries a 412', async () 
   expect(screen.queryByRole('button', { name: '关闭 Project 模型入口' })).not.toBeInTheDocument()
 })
 
+// 验证 Project 失权清空元数据，身份变化后忽略迟到响应。
 it('clears Project metadata when its authorization fails and ignores late identity responses', async () => {
   let complete: (value: typeof settings) => void = () => undefined
   state.settings.mockImplementationOnce(() => new Promise(resolve => { complete = resolve }))
@@ -96,6 +104,7 @@ it('clears Project metadata when its authorization fails and ignores late identi
   expect(state.run).not.toHaveBeenCalled()
 })
 
+// 验证离页取消最新设置写入并忽略迟到成功。
 it('cancels the latest settings mutation on leaving and never applies its late response', async () => {
   let signal: AbortSignal | undefined
   let finish: (value: typeof settings) => void = () => undefined
@@ -108,6 +117,7 @@ it('cancels the latest settings mutation on leaving and never applies its late r
   finish(settings); expect(state.update).toHaveBeenCalledTimes(1); expect(state.run).not.toHaveBeenCalled()
 })
 
+// 验证批准或价格到期时关闭付费资格，保留只读操作。
 it.each(['approval', 'price'])('closes paid eligibility when %s expires while mounted, retaining read controls', async kind => {
   vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-16T08:00:00Z'))
   state.settings.mockResolvedValue({ value: { ...settings.value, enabled: true, modelCallsAvailable: true,
@@ -133,19 +143,23 @@ it.each(['approval', 'price'])('closes paid eligibility when %s expires while mo
 })
 
 const batchId = '60000000-0000-4000-8000-000000000001'
+// 构造已经绑定指定风险确认的设置，保留原始 ETag。
 function selectedSettings() {
   return { value: { ...settings.value, enablementId: approval }, etag: settings.etag }
 }
+// 构造属于当前 Project/确认的固定两次合成批次。
 function loadedBatch() {
   return { id: batchId, projectId: project, enablementId: approval, approvedBy: owner,
     approvedAt: '2026-10-16T00:00:00Z', manifestSha256: 'a'.repeat(64), expiresAt: '2026-10-17T00:00:00Z',
     maxRequests: 2, maxCostMicrousd: 700000, revoked: false }
 }
+// 复用同一路由树重渲染，让测试区分身份变化与整页重新创建。
 function samePage() {
   return <MemoryRouter initialEntries={[`/projects/${project}/agent/personal`]}><Routes>
     <Route path="/projects/:projectId/agent/personal" element={<PersonalAgentPage />} />
   </Routes></MemoryRouter>
 }
+// 先读取已选择确认，再由界面显式加载指定批次，准备失权传播场景。
 async function loadSelectedBatch() {
   state.settings.mockResolvedValue(selectedSettings()); state.batch.mockResolvedValue(loadedBatch())
   const view = show(); await screen.findByText(`风险确认 ${approval}`)
@@ -154,6 +168,7 @@ async function loadSelectedBatch() {
   await screen.findByText(`当前批次 ${batchId}`)
   return view
 }
+// 集中断言批准、凭据、批次及写控件都已撤下，避免只清除建议而保留旧管理权限。
 function expectNoStaleManagement() {
   expect(screen.queryByText(`风险确认 ${approval}`)).not.toBeInTheDocument()
   expect(screen.queryByText(`当前批次 ${batchId}`)).not.toBeInTheDocument()
@@ -163,6 +178,7 @@ function expectNoStaleManagement() {
   expect(screen.queryByLabelText('已有批次 ID')).not.toBeInTheDocument()
 }
 
+// 验证 live 失权清空所属 Project、凭据、批准和批次元数据。
 it('clears owning Project, credential, approval and batch metadata when live permission is denied', async () => {
   const view = await loadSelectedBatch()
   expect(screen.getByRole('button', { name: '关闭 Project 模型入口' })).toBeInTheDocument()
@@ -175,6 +191,7 @@ it('clears owning Project, credential, approval and batch metadata when live per
   expect(state.run).not.toHaveBeenCalled(); expect(state.liveRun).not.toHaveBeenCalled()
 })
 
+// 验证失权前在途设置写入被取消，迟到成功不能恢复旧管理控件。
 it('cancels a pre-denial settings mutation and prevents its late success from reviving stale management', async () => {
   let signal: AbortSignal | undefined
   let finish: (value: ReturnType<typeof selectedSettings>) => void = () => undefined

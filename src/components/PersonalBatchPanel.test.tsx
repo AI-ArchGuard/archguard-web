@@ -1,3 +1,4 @@
+// 批次面板回归：核对合成模板、清单与明确费用同意，变化/错误使旧预览失效，Viewer 仅可读。
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { AgentRequest } from '../api/agent'
 import { PersonalAgentClientError, type PersonalEnablement } from '../api/personalAgent'
@@ -17,6 +18,7 @@ const enablement: PersonalEnablement = { id: approval, projectId: project, appro
 const metadata = { id: batch, projectId: project, enablementId: approval, approvedBy: project,
   approvedAt: '2026-10-16T08:00:00Z', manifestSha256: 'a'.repeat(64), expiresAt: '2026-10-16T09:00:00Z',
   maxRequests: 2, maxCostMicrousd: 700000, revoked: false }
+// 按指定 ID 生成对应解释/摘要的终态合成模板，供后续故意改变范围或状态。
 function template(id: string): AgentRequest {
   const purpose = id === explanation ? 'FINDING_EXPLANATION' : 'PR_SUMMARY'
   return { id, projectId: project, requesterId: project, traceId: 'b'.repeat(32), purpose, state: 'FAILED', result: null,
@@ -32,12 +34,14 @@ beforeEach(() => {
   calls.preview.mockResolvedValue({ schemaVersion: '0.1.0', manifestSha256: 'a'.repeat(64), templateCount: 2 })
   calls.approve.mockResolvedValue(metadata); calls.get.mockResolvedValue(metadata)
 })
+// 挂载可控管理权限的批次面板，并返回接收/失权回调供断言。
 function show(canManage = true, onDenied = vi.fn()) {
   const receive = vi.fn()
   const view = render(<PersonalBatchPanel projectId={project} enablement={enablement} canManage={canManage} disabled={false}
     onBatch={receive} onDenied={onDenied} />)
   return { ...view, receive, denied: onDenied }
 }
+// 通过真实表单交互填写两个固定模板 ID，显式点击预览并等待核对完成。
 async function preview() {
   fireEvent.change(screen.getByLabelText('解释模板请求 ID'), { target: { value: explanation } })
   fireEvent.change(screen.getByLabelText('摘要模板请求 ID'), { target: { value: summary } })
@@ -45,6 +49,7 @@ async function preview() {
   await screen.findByText(/已核对 2 个模板/)
 }
 
+// 验证只接受同 Project 终态模板及显式费用同意，输入变化后取消同意。
 it('requires terminal same-Project templates and explicit batch consent, then clears consent on every input change', async () => {
   show(); await preview()
   expect(calls.read.mock.calls.map(call => call.slice(0, 2))).toEqual([[project, explanation], [project, summary]])
@@ -63,6 +68,7 @@ it('requires terminal same-Project templates and explicit batch consent, then cl
     maxRequests: 2, maxCostMicrousd: 700000, callsApproved: true }])
 })
 
+// 验证跨 Project、未终态或用途错误的模板不能形成可信预览。
 it.each(['foreign', 'running', 'purpose'])('rejects a %s template before producing a trusted preview', async invalid => {
   calls.read.mockImplementation((_project: string, id: string) => {
     const value = template(id)
@@ -76,6 +82,7 @@ it.each(['foreign', 'running', 'purpose'])('rejects a %s template before produci
   await screen.findByRole('alert'); expect(calls.preview).not.toHaveBeenCalled(); expect(calls.approve).not.toHaveBeenCalled()
 })
 
+// 验证模板变化撤销旧预览，批准结果未知后不自动重试。
 it('invalidates preview when templates change and never auto-retries an unknown approval outcome', async () => {
   show(); await preview()
   fireEvent.change(screen.getByLabelText('解释模板请求 ID'), { target: { value: inventory } })
@@ -89,6 +96,7 @@ it('invalidates preview when templates change and never auto-retries an unknown 
   expect(screen.getByRole('checkbox')).not.toBeChecked(); expect(screen.queryByText(/已核对 2 个模板/)).not.toBeInTheDocument()
 })
 
+// 验证 Viewer 可读历史但无写入口，读取失权后清除批次。
 it('allows Viewer history reads without any mutation control and clears a denied read', async () => {
   const view = show(false)
   expect(screen.queryByLabelText('解释模板请求 ID')).not.toBeInTheDocument()

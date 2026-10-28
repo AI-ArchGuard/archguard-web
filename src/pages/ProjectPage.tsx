@@ -1,3 +1,4 @@
+// Project 工作台：注册受控目录、用明确规则版本提交扫描，并连接规则、治理、文档和个人验收入口。
 import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
@@ -7,12 +8,15 @@ import { useApi } from '../hooks/useApi'
 import { agentEntryEnabled } from '../agentEntry'
 import { personalAgentEntryEnabled } from '../personalAgentEntry'
 
+// 组合 Project 元数据、受控仓库与扫描历史；各资源独立读取并展示状态。
 export function ProjectPage() {
   const { projectId = '' } = useParams(); const project = useApi(() => api<Project>(`/api/v1/projects/${projectId}`), `project:${projectId}`)
   const repositories = useApi(() => api<Repository[]>(`/api/v1/projects/${projectId}/repositories`), `repositories:${projectId}`)
   const jobs = useApi(() => api<ScanJob[]>(`/api/v1/projects/${projectId}/scan-jobs?size=100`), `jobs:${projectId}`)
   const [repository, setRepository] = useState({ key: '', name: '', mountPath: '' }); const [versionId, setVersionId] = useState(''); const [repositoryId, setRepositoryId] = useState('')
+  // 登记受控挂载的相对路径，成功后重置表单并刷新仓库列表。
   async function addRepository(e: FormEvent) { e.preventDefault(); await api(`/api/v1/projects/${projectId}/repositories`, { method: 'POST', body: JSON.stringify(repository) }); setRepository({ key: '', name: '', mountPath: '' }); repositories.reload() }
+  // 每次显式提交生成独立幂等键，绑定选定 Repository 与 RuleSetVersion，随后刷新扫描历史。
   async function submit(e: FormEvent) { e.preventDefault(); await api(`/api/v1/projects/${projectId}/scan-jobs`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ repositoryId, ruleSetVersionId: versionId }) }); jobs.reload() }
   if (project.loading) return <main><Loading /></main>; if (project.error) return <main><Failure error={project.error} retry={project.reload} /></main>
   return <main><div className="page-head"><div><p className="eyebrow">{project.data?.key}</p><h1>{project.data?.name}</h1></div><div className="row-actions">{agentEntryEnabled() && <Link to={`/projects/${projectId}/agent/documents`}>项目文档</Link>}{personalAgentEntryEnabled() && <Link to={`/projects/${projectId}/agent/personal`}>个人 Agent 受控验收</Link>}<Link to="/projects">返回 Projects</Link></div></div>

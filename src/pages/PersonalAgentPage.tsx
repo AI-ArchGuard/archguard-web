@@ -1,3 +1,4 @@
+// 个人验收协调页：分开读取风险确认、Project 设置、凭据元数据和批次，区分管理、费用批准与显式真实发送。
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
@@ -12,6 +13,7 @@ import { PersonalLivePanel } from '../components/PersonalLivePanel'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
+// 先检查展示开关、身份与 Project ID，再按 Project/身份挂载独立协调状态。
 export function PersonalAgentPage() {
   const { projectId = '' } = useParams(); const { user } = useAuth()
   if (!personalAgentEntryEnabled()) return <main><h1>个人真实验收入口已关闭</h1><p>扫描与质量门禁继续可用。</p></main>
@@ -19,6 +21,7 @@ export function PersonalAgentPage() {
   return <PersonalAgent key={`${projectId}:${user.profile.sub}`} projectId={projectId} actorId={user.profile.sub} />
 }
 
+// 管理当前范围的元数据及写操作；代次、取消信号与同步锁共同阻止迟到响应和重复提交。
 function PersonalAgent({ projectId, actorId }: { projectId: string; actorId: string }) {
   const [settings, setSettings] = useState<PersonalSettingsSnapshot>()
   const [credential, setCredential] = useState<CredentialStatus>()
@@ -30,6 +33,7 @@ function PersonalAgent({ projectId, actorId }: { projectId: string; actorId: str
   const [error, setError] = useState<PersonalAgentClientError>(), [notice, setNotice] = useState('')
   const [permissionLost, setPermissionLost] = useState(false)
   const [reload, setReload] = useState(0)
+  // 代次在切换/离页时递增；取消只是浏览器等待结束，不能撤销已到达后台的写入。
   const generation = useRef(0), pending = useRef<AbortController | null>(null), mutating = useRef(false)
 
   const clearMetadata = useCallback(() => {
@@ -69,7 +73,9 @@ function PersonalAgent({ projectId, actorId }: { projectId: string; actorId: str
     return () => window.removeEventListener('pagehide', hide)
   }, [clearMetadata, cancelPending])
 
+  // 既要 Project Maintainer，也要能通过部署所有者凭据元数据边界；后端授权始终权威。
   const canManage = !!settings && role === 'MAINTAINER' && !!credential
+  // 顺序执行一个管理操作；写入失败或权限丢失时撤下旧元数据，保留固定错误且不自动补写。
   async function perform<T>(operation: (signal: AbortSignal) => Promise<T>, accept: (value: T) => void, write = false) {
     if (mutating.current) return
     mutating.current = true; setBusy(true); setError(undefined); setNotice('')
@@ -85,11 +91,14 @@ function PersonalAgent({ projectId, actorId }: { projectId: string; actorId: str
       setError(safe)
     } finally { if (generation.current === current) { mutating.current = false; setBusy(false) } }
   }
+  // 人工重新读取配置前清空元数据与提示，避免把旧权限/批准状态作为当前事实。
   function refresh() {
     if (mutating.current) return
     clearMetadata(); setLoading(true); setError(undefined); setNotice(''); setPermissionLost(false); setReload(value => value + 1)
   }
+  // 风险确认变化后清除已选择批次，要求重新核对对应的费用批准。
   function changedApproval(value: PersonalEnablement) { setApproval(value); setApprovalId(value.id); setBatch(undefined) }
+  // 发送资格需设置、凭据版本与当前确认一致；批次及有效期由下层在点击时再次核对。
   const effective = !!settings?.value.enabled && settings.value.modelCallsAvailable && !!credential?.configured
     && !!approval && !approval.revoked && approval.id === settings.value.enablementId
     && approval.credentialVersion === credential.credentialVersion

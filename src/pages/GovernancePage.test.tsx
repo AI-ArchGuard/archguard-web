@@ -1,3 +1,4 @@
+// 治理读取回归：当前 head、基线分类、上一修订差异和缺报告状态必须保持各自含义。
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ApiClientError } from '../api/client'
@@ -34,12 +35,14 @@ vi.mock('../hooks/useApi', () => ({
 const gate = { id: 'gate-1', targetBranch: 'main', ruleSetVersionId: 'version-1', outcome: 'FAIL', ciExitCode: 2, blockedCount: 1, newCount: 1, existingCount: 1, resolvedCount: 1,
   evaluatedAt: '2026-09-26T00:00:00Z', comparisonId: 'comparison-1' }
 
+// 以明确 Project/Repository 路由展示只读治理页。
 function showPage() {
   render(<MemoryRouter initialEntries={['/projects/project-1/repositories/repository-1/governance']}><Routes>
     <Route path="/projects/:projectId/repositories/:repositoryId/governance" element={<GovernancePage />} />
   </Routes></MemoryRouter>)
 }
 
+// 验证当前 head 门禁、同范围历史、Finding 分类和例外到期状态。
 it('shows the current head gate, scoped history, classified findings and exception expiry', () => {
   state.current = true; state.forbidden = false
   showPage()
@@ -55,6 +58,7 @@ it('shows the current head gate, scoped history, classified findings and excepti
   expect(screen.getByLabelText('新增趋势 1')).toBeInTheDocument()
 })
 
+// 验证当前 head 缺少门禁时不借用历史 PASS。
 it('does not reuse a historical result when the PR head has no current gate', () => {
   state.current = false; state.forbidden = false
   showPage()
@@ -62,12 +66,14 @@ it('does not reuse a historical result when the PR head has no current gate', ()
   expect(screen.getByText(/旧提交的 PASS 不代表当前状态/)).toBeInTheDocument()
 })
 
+// 验证跨 Project PR 读取失败展示安全的无权限状态。
 it('shows a safe forbidden state for a cross-project PR list', () => {
   state.current = true; state.forbidden = true
   showPage()
   expect(screen.getByText(/无权查看此 Project/)).toBeInTheDocument()
 })
 
+// 验证 PR 修订修复独立于相对基线门禁分类。
 it('separates PR repair from baseline gate classification', () => {
   state.current = true; state.forbidden = false; state.revisionAvailable = true
   showPage()
@@ -81,6 +87,7 @@ it('separates PR repair from baseline gate classification', () => {
   expect(screen.getAllByText(/相对基线/).length).toBeGreaterThan(0)
 })
 
+// 验证缺失上一 PR 报告显示不可用，不能解释为零 Finding。
 it('does not interpret a missing previous PR report as an empty finding set', () => {
   state.current = true; state.forbidden = false; state.revisionAvailable = false
   showPage()

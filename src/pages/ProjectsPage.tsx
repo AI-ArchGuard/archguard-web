@@ -1,3 +1,4 @@
+// Project 列表与创建页：读取可访问项目，创建成功后刷新列表；最终访问权限由服务端判断。
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
@@ -5,9 +6,11 @@ import type { Project } from '../api/types'
 import { Empty, Failure, Loading } from '../components/States'
 import { useApi } from '../hooks/useApi'
 
+// 读取当前可访问 Project，维护新建表单和提交中的按钮状态。
 export function ProjectsPage() {
   const projects = useApi(() => api<{ items: Project[] }>('/api/v1/projects?size=100'), 'projects')
   const [key, setKey] = useState(''); const [name, setName] = useState(''); const [saving, setSaving] = useState(false)
+  // 提交项目元数据，成功后清空输入并刷新；无论成功失败都解除保存状态。
   async function create(event: FormEvent) { event.preventDefault(); setSaving(true)
     try { await api('/api/v1/projects', { method: 'POST', body: JSON.stringify({ key, name }) }); setKey(''); setName(''); projects.reload() }
     finally { setSaving(false) } }

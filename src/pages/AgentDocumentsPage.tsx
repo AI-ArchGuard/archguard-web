@@ -1,3 +1,4 @@
+// 项目文档管理页：按角色显示上传入口，读取不可变文档版本；上传经本地文本检查后使用幂等键提交。
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
@@ -7,6 +8,7 @@ import { ownRole } from '../api/projectRole'
 import { Empty, Failure, Loading } from '../components/States'
 import { useApi } from '../hooks/useApi'
 
+// 将上传失败状态映射为固定可读原因，避免直接呈现接口错误原文。
 function uploadMessage(error: unknown) {
   if (error instanceof ApiClientError) {
     if (error.status === 403 || error.status === 404) return '没有上传权限，或 Project 已不可访问。'
@@ -17,6 +19,7 @@ function uploadMessage(error: unknown) {
   return '上传失败，请稍后重试。'
 }
 
+// 文档与版本分别分页，角色定时复核；只有 Maintainer 显示上传控件。
 export function AgentDocumentsPage() {
   const { projectId = '' } = useParams()
   const { user } = useAuth()
@@ -42,6 +45,7 @@ export function AgentDocumentsPage() {
     return () => window.clearInterval(timer)
   }, [role.reload])
 
+  // 为点击递增读取代次，忽略旧点击的迟到结果，并确认版本确属当前 Project 与文档。
   async function showVersion(versionId: string) {
     const read = ++versionRead.current
     setVersion(undefined); setVersionError('')
@@ -55,6 +59,7 @@ export function AgentDocumentsPage() {
     } catch { if (read === versionRead.current) setVersionError('无权读取该文档版本，或版本已不可用。') }
   }
 
+  // 检查扩展名、大小和 UTF-8 后提交；相同 File 对象与文档键在失败重试时复用幂等键，成功后清除。
   async function upload(event: FormEvent) {
     event.preventDefault(); setUploadError(''); setUploadSuccess('')
     if (!file || role.data !== 'MAINTAINER') return

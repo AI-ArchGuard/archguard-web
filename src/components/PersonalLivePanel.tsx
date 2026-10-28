@@ -1,8 +1,10 @@
+// 个人真实发送面板：将页面准入、有效期及批次状态机共同用于按钮条件，保留只读历史与显式恢复。
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AgentRequestView } from './AgentRequestView'
 import { usePersonalLiveBatch } from '../hooks/usePersonalLiveBatch'
 import type { PersonalBatch, PersonalPurpose } from '../api/personalAgent'
 
+// 真实操作必须同时满足页面条件与 Hook 串行条件；历史读取不因模型入口关闭而自动消失。
 export function PersonalLivePanel({ projectId, batch, canSend, authorizationExpiresAt, priceExpiresAt, onDenied }: {
   projectId: string; batch: PersonalBatch; canSend: boolean; authorizationExpiresAt?: string; priceExpiresAt?: string; onDenied?: () => void
 }) {
@@ -31,7 +33,7 @@ export function PersonalLivePanel({ projectId, batch, canSend, authorizationExpi
     const observe = () => {
       if (!active) return
       const now = Date.now()
-      // A backwards system-clock adjustment must not reopen an already observed expiry.
+      // 已观察到的时间只增不减，系统时钟回拨不能重新开放已经到期的发送入口。
       setObservedTime(previous => Math.max(previous, now))
       if (now < deadline) timer = window.setTimeout(observe, Math.min(1000, Math.max(1, deadline - now)))
     }
@@ -53,7 +55,7 @@ export function PersonalLivePanel({ projectId, batch, canSend, authorizationExpi
       <button disabled={!eligible || live.busy || !live.canSubmit(purpose)} onClick={() => {
         const now = Date.now()
         setObservedTime(previous => Math.max(previous, now))
-        // Timers can be throttled in background tabs. Fresh event-time checks never extend a deadline.
+        // 后台标签页计时器可能延迟，点击时重新核对当前时间，不能借旧按钮快照延长期限。
         if (!denialForwarded.current && eligible && Number.isFinite(deadline) && now < deadline && live.canSubmit(purpose)) void live.run(purpose)
       }}>{purpose === 'FINDING_EXPLANATION' ? '调用 DeepSeek 官方 API · 合成解释（最多 USD 0.35）' : '调用 DeepSeek 官方 API · 合成摘要（最多 USD 0.35）'}</button>
       {live.execution?.templates.find(template => template.purpose === purpose)?.request && <p className="muted">已有固定请求槽位；仅恢复读取，不创建替代请求。</p>}
