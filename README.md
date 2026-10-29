@@ -62,6 +62,8 @@ Platform #50 已合并为 `710025d`，main CI 成功后本 Web 消费固定 [API
 
 安全补丁仅将已存在的间接依赖 source-map-js 锁定版本从 1.2.1 更新至 1.2.2（BSD-3-Clause），修复[官方发布列出的拒绝服务漏洞](https://github.com/7rulnik/source-map-js/releases/tag/v1.2.2)。未增加依赖或批量升级；保持旧版本无法通过当前 high 门槛，降低扫描门槛不是备选。
 
+工具链补丁按官方公告固定 [Vite 8.3.3](https://github.com/advisories/GHSA-587h-7wmj-h5pm) 与 [Vitest 5.0.3](https://github.com/advisories/GHSA-xp26-3454-mjgp)，并将已有间接依赖更新至 [undici 8.12.2](https://github.com/advisories/GHSA-2m5v-pch6-74hx)、[zod 4.6.6](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) 的同系列最小修复版本（均为 MIT）。不新增直接依赖，继续使用 `npm ci` 和原 `npm audit --audit-level=high` 门槛；业务、固定 API 契约及模型调用权限不变。
+
 ## 3H 兼容顺序
 
 先发布 Platform 3F 只读接口，再发布使用固定快照生成类型的 Web。回滚时先回滚 Web，再回滚 Platform；新页面不写入治理数据，不修改 Scanner Schema，也不改变 3E CI 提交流程。
