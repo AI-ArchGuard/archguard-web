@@ -63,8 +63,7 @@ function Citation({ citation, request, onDenied }: { citation: VerifiedCitation;
   }
   return <li>{!sameScope ? <span>引用范围不匹配</span> : citation.source === 'SCANNER_EVIDENCE'
     ? <button className="quiet" disabled={loading} onClick={() => void resolve()}>核对 Evidence：{citation.label}</button>
-    : <><button className="quiet" disabled={loading} onClick={() => void resolve()}>核对文档版本：{citation.label}</button>
-      <small className="mono">版本 {citation.documentVersionId} · SHA-256 {citation.contentSha256} · 片段 {citation.fragmentIndex}</small></>}
+    : <button className="quiet" disabled={loading} onClick={() => void resolve()}>核对文档版本：{citation.label}</button>}
     {loading && <p role="status">正在核对引用…</p>}
     {detail && <pre className="document-content">{detail}</pre>}{(error || !sameScope) && <small>引用无法验证；引用尚不可在此页验证，请勿将其当作事实。</small>}</li>
 }
@@ -76,25 +75,32 @@ export function AgentRequestView({ request, onDenied }: { request: AgentRequest;
     {request.state === 'QUEUED' && <p role="status">解释请求排队中…</p>}
     {request.state === 'RUNNING' && <p role="status">正在生成并校验建议…</p>}
     {request.state === 'FAILED' && <p role="alert">{request.failure ? failureReasons[request.failure.code] : 'Agent 请求失败'}；扫描与质量门禁不受影响。</p>}
-    {request.state === 'SUCCEEDED' && request.result && <>
+    {request.state === 'SUCCEEDED' && request.result && <div className="agent-result-layout">
+      <div className="result-reading">
       <h3>已校验的建议</h3><p>{request.result.conclusion}</p>
       <h4>规则依据</h4><ul>{request.result.ruleBasis.map((item, index) => <li key={index}>{item}</li>)}</ul>
       <h4>说明</h4><ul>{request.result.claims.map((item, index) => <li key={index}>{item}</li>)}</ul>
       <h4>低风险建议</h4><ul>{request.result.suggestions.map((item, index) => <li key={index}>{item.text}（需人工复核）</li>)}</ul>
+      </div>
+      <aside className="agent-citations" aria-label="引用与依据">
       <p>Evidence 覆盖：{({ NONE: '证据不足', PARTIAL: '部分覆盖', COMPLETE: '完整覆盖' })[request.result.evidenceCoverage]}</p>
       <h4>平台验证的引用</h4>{request.result.citations.length
         ? <ul>{request.result.citations.map((citation) => <Citation
           key={JSON.stringify([request.id, request.projectId, request.bindings, citation])}
           citation={citation} request={request} onDenied={onDenied} />)}</ul>
         : <p>没有可展示的引用。</p>}
-    </>}
-    <small className="agent-trace">Prompt {request.bindings.promptVersion} · 模型 {request.bindings.modelId} · Schema {request.bindings.outputSchemaVersion} · traceId {request.traceId}</small>
-    <details><summary>输入版本与用量</summary>
+      </aside>
+    </div>}
+    <details className="management-disclosure compact-metadata"><summary>运行详情</summary>
+      <small className="agent-trace">Prompt {request.bindings.promptVersion} · 模型 {request.bindings.modelId} · Schema {request.bindings.outputSchemaVersion} · traceId {request.traceId}</small>
+      <p className="mono">请求 {request.id}</p>
       <p className="mono">Scan {request.bindings.scanJobId} · 报告 {request.bindings.reportSha256}</p>
       {request.bindings.prHeadRevisionId && <p className="mono">PR 修订 {request.bindings.prHeadRevisionId}</p>}
       <p className="mono">Finding {request.bindings.findingIds.join(', ')}</p>
       <p>模型配置 {request.bindings.modelProfileVersion} · 协议 {request.bindings.modelProtocolVersion} · 价格目录 {request.bindings.priceCatalogVersion}</p>
       {request.bindings.documentVersions.map((version) => <p className="mono" key={version.documentVersionId}>文档版本 {version.documentVersionId} · SHA-256 {version.contentSha256}</p>)}
+      {request.result?.citations.filter(citation => citation.source === 'PROJECT_DOCUMENT').map(citation =>
+        <p className="mono" key={citation.citationId}>引用 {citation.label} · 文档 {citation.documentVersionId} · SHA-256 {citation.contentSha256} · 片段 {citation.fragmentIndex}</p>)}
       {request.usage && <p>输入 Token {request.usage.inputTokens} · 输出 Token {request.usage.outputTokens} · 延迟 {request.usage.latencyMs} ms · 预估费用 {(request.usage.estimatedCostMicrousd / 1000000).toFixed(6)} USD
         {request.usage.actualCostMicrousd != null && ` · 实际费用 ${(request.usage.actualCostMicrousd / 1000000).toFixed(6)} USD`}</p>}
     </details>

@@ -41,7 +41,7 @@ test('adds, replaces and explicitly deletes without browser persistence or model
   await expect(page.getByText('未配置', { exact: true })).toBeVisible()
   await expect(page.getByText(/如需撤销，请到 DeepSeek 控制台操作/)).toBeVisible()
   expect(deletes).toBe(1); expect(modelRequests).toBe(0)
-  await input.fill(synthetic); await page.getByRole('link', { name: 'AG ArchGuard' }).click()
+  await input.fill(synthetic); await page.getByRole('link', { name: 'ArchGuard', exact: true }).click()
   await page.getByRole('link', { name: '模型凭据' }).click(); await expect(input).toHaveValue('')
 })
 

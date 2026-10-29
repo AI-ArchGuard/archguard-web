@@ -46,6 +46,37 @@ function show() {
   </Routes></MemoryRouter>)
 }
 
+// 配置折叠只改变展示，保持未提交输入与协调器，不产生管理或模型写入。
+it('keeps management collapsed and preserves nonsecret input when reopened without POSTs', async () => {
+  show()
+  await screen.findByText('风险确认与 Project 开关')
+  for (const label of ['当前配置（只读，不测试 Key）', '风险确认与 Project 开关', '合成验收批次管理']) {
+    expect(screen.getByText(label).closest('details')).not.toHaveAttribute('open')
+  }
+  expect(screen.getByText(/当前未选择批次/)).toBeVisible()
+  const toggle = screen.getByText('风险确认与 Project 开关')
+  fireEvent.click(toggle)
+  const input = screen.getByLabelText('非敏感账户记录编号')
+  fireEvent.change(input, { target: { value: 'review-record-42' } })
+  fireEvent.click(toggle); fireEvent.click(toggle)
+  expect(screen.getByLabelText('非敏感账户记录编号')).toBe(input)
+  expect(input).toHaveValue('review-record-42')
+  expect(screen.getByRole('checkbox', { name: /我已实际核对/ })).not.toBeChecked()
+  expect(state.settings).toHaveBeenCalledTimes(1)
+  for (const operation of [state.update, state.acknowledge, state.approve, state.run, state.liveRun]) {
+    expect(operation).not.toHaveBeenCalled()
+  }
+})
+
+// 既有管理交互先显式展开；折叠行为在独立用例中检查。
+async function openManagement(waitForLoad = true) {
+  if (waitForLoad) await screen.findByText('风险确认与 Project 开关')
+  for (const label of ['当前配置（只读，不测试 Key）', '风险确认与 Project 开关', '合成验收批次管理']) {
+    const summary = screen.getByText(label)
+    if (!summary.closest('details')?.open) fireEvent.click(summary)
+  }
+}
+
 // 验证入口关闭时无任何 API 工作。
 it('keeps the disabled entry completely free of API work', () => {
   state.enabled = false; show()
@@ -55,16 +86,16 @@ it('keeps the disabled entry completely free of API work', () => {
 
 // 验证 owner 且 Maintainer 只读取元数据，不增加 Key 表单或调用模型。
 it('loads metadata for an owner Maintainer without adding a second Key form or calling models', async () => {
-  show(); await screen.findByRole('button', { name: '创建风险确认（无模型调用）' })
+  show(); await openManagement(); await screen.findByRole('button', { name: '创建风险确认（无模型调用）' })
   expect(screen.getByRole('link', { name: '管理已加密的 API Key' })).toHaveAttribute('href', '/settings/model-credentials')
   expect(document.querySelector('input[type=password]')).toBeNull()
-  expect(screen.getByText(/每次最多 USD 0.35/)).toBeInTheDocument()
+  expect(screen.getAllByText(/每次最多 USD 0.35/)[0]).toBeInTheDocument()
   expect(state.acknowledge).not.toHaveBeenCalled(); expect(state.approve).not.toHaveBeenCalled(); expect(state.run).not.toHaveBeenCalled()
 })
 
 // 验证 Viewer 只有读取控件，没有写控件。
 it('shows read controls but hides mutation controls for a Viewer', async () => {
-  state.role.mockResolvedValue('VIEWER'); show()
+  state.role.mockResolvedValue('VIEWER'); show(); await openManagement()
   await screen.findByRole('button', { name: '读取已有批次' })
   expect(screen.queryByRole('button', { name: '创建风险确认（无模型调用）' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '关闭 Project 模型入口' })).not.toBeInTheDocument()
@@ -73,14 +104,14 @@ it('shows read controls but hides mutation controls for a Viewer', async () => {
 
 // 验证仅有 Maintainer 身份不能获得部署所有者的写权限。
 it('does not grant write controls merely because the actor is a Maintainer', async () => {
-  state.key.mockRejectedValue(new CredentialClientError(403)); show()
+  state.key.mockRejectedValue(new CredentialClientError(403)); show(); await openManagement()
   await screen.findByRole('button', { name: '读取已有批次' })
   expect(screen.queryByRole('button', { name: '创建风险确认（无模型调用）' })).not.toBeInTheDocument()
 })
 
 // 验证原样沿用强 ETag，412 后不覆盖也不重试。
 it('uses the exact strong ETag and never overwrites or retries a 412', async () => {
-  state.update.mockRejectedValue(new PersonalAgentClientError(412)); show()
+  state.update.mockRejectedValue(new PersonalAgentClientError(412)); show(); await openManagement()
   await screen.findByRole('button', { name: '关闭 Project 模型入口' })
   fireEvent.click(screen.getByRole('button', { name: '关闭 Project 模型入口' }))
   await screen.findByText(/设置版本已变化/)
@@ -88,6 +119,17 @@ it('uses the exact strong ETag and never overwrites or retries a 412', async () 
   expect(state.update.mock.calls[0].slice(0, 3)).toEqual([project, { enabled: false }, '"9007199254740993"'])
   expect(state.settings).toHaveBeenCalledTimes(1)
   expect(screen.queryByRole('button', { name: '关闭 Project 模型入口' })).not.toBeInTheDocument()
+})
+
+// 验证 Project 失权清空元数据，身份变化后忽略迟到响应。
+it('keeps configuration failures visible and their trace collapsed', async () => {
+  state.settings.mockRejectedValue(new PersonalAgentClientError(404, 'abcdef0123456789abcdef0123456789')); show()
+  expect(await screen.findByRole('alert')).toHaveTextContent(/无权访问此 Project/)
+  const trace = screen.getByText(/abcdef0123456789abcdef0123456789/)
+  expect(trace.closest('details')).not.toHaveAttribute('open')
+  expect(trace).not.toBeVisible()
+  fireEvent.click(screen.getByText('运行详情'))
+  expect(trace).toBeVisible()
 })
 
 // 验证 Project 失权清空元数据，身份变化后忽略迟到响应。
@@ -129,7 +171,7 @@ it.each(['approval', 'price'])('closes paid eligibility when %s expires while mo
   state.batch.mockResolvedValue({ id: batchId, projectId: project, enablementId: approval, approvedBy: owner,
     approvedAt: '2026-10-16T08:00:00Z', manifestSha256: 'a'.repeat(64), expiresAt: '2026-10-16T09:00:00Z',
     maxRequests: 2, maxCostMicrousd: 700000, revoked: false })
-  await act(async () => { show() })
+  await act(async () => { show() }); await openManagement(false)
   await act(async () => {
     fireEvent.change(screen.getByLabelText('已有批次 ID'), { target: { value: batchId } })
     fireEvent.click(screen.getByRole('button', { name: '读取已有批次' }))
@@ -162,12 +204,37 @@ function samePage() {
 // 先读取已选择确认，再由界面显式加载指定批次，准备失权传播场景。
 async function loadSelectedBatch() {
   state.settings.mockResolvedValue(selectedSettings()); state.batch.mockResolvedValue(loadedBatch())
-  const view = show(); await screen.findByText(`风险确认 ${approval}`)
+  const view = show(); await openManagement(); await screen.findByText(`风险确认 ${approval}`)
   fireEvent.change(screen.getByLabelText('已有批次 ID'), { target: { value: batchId } })
   fireEvent.click(screen.getByRole('button', { name: '读取已有批次' }))
   await screen.findByText(`当前批次 ${batchId}`)
   return view
 }
+
+// 管理区开合不替换运行面板或批次输入，运行结果始终位于低频配置之前。
+it('keeps selected live controls mounted ahead of management while disclosures toggle', async () => {
+  await loadSelectedBatch()
+  const live = screen.getByRole('button', { name: '手动恢复批次与现有结果' })
+  const batchInput = screen.getByLabelText('已有批次 ID')
+  const config = screen.getByText('当前配置（只读，不测试 Key）')
+  expect(live.compareDocumentPosition(config) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  for (const label of ['当前配置（只读，不测试 Key）', '风险确认与 Project 开关', '合成验收批次管理']) {
+    const summary = screen.getByText(label)
+    fireEvent.click(summary)
+    expect(summary.closest('details')).not.toHaveAttribute('open')
+    expect(live).toBeVisible()
+    fireEvent.click(summary)
+  }
+  expect(screen.getByRole('button', { name: '手动恢复批次与现有结果' })).toBe(live)
+  expect(screen.getByLabelText('已有批次 ID')).toBe(batchInput)
+  expect(batchInput).toHaveValue(batchId)
+  expect(state.batch).toHaveBeenCalledTimes(1)
+  expect(state.settings).toHaveBeenCalledTimes(1)
+  expect(state.enablement).toHaveBeenCalledTimes(1)
+  for (const operation of [state.update, state.acknowledge, state.approve, state.run, state.liveRun]) {
+    expect(operation).not.toHaveBeenCalled()
+  }
+})
 // 集中断言批准、凭据、批次及写控件都已撤下，避免只清除建议而保留旧管理权限。
 function expectNoStaleManagement() {
   expect(screen.queryByText(`风险确认 ${approval}`)).not.toBeInTheDocument()

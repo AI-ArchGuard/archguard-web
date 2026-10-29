@@ -152,6 +152,7 @@ async function syntheticEnvironment(page: Page, mode: Mode = 'success', options:
 // 通过页面输入明确批次 ID 并读取历史，不自动选择最新批次。
 async function openBatch(page: Page) {
   await page.goto(`/projects/${ids.project}/agent/personal`)
+  await page.getByText('合成验收批次管理', { exact: true }).click()
   await page.getByLabel('已有批次 ID', { exact: true }).fill(ids.batch)
   await page.getByRole('button', { name: '读取已有批次', exact: true }).click()
 }
@@ -162,6 +163,7 @@ const summary = (page: Page) => page.getByRole('button', { name: /调用 DeepSee
 test('creates only an explicitly accepted approved 1017 acknowledgement without enabling or sending a model call', async ({ page }) => {
   const state = await syntheticEnvironment(page, 'success', { acknowledgementCreateOnly: true })
   await page.goto(`/projects/${ids.project}/agent/personal`)
+  await page.getByText('风险确认与 Project 开关', { exact: true }).click()
   const create = page.getByRole('button', { name: '创建风险确认（无模型调用）', exact: true })
   const risk = page.getByRole('checkbox', { name: '我已实际核对上述资料并接受列明的未核实风险；这不批准模型调用或费用', exact: true })
   await expect(create).toBeEnabled()
@@ -171,7 +173,9 @@ test('creates only an explicitly accepted approved 1017 acknowledgement without 
 
   await page.getByLabel('非敏感账户记录编号', { exact: true }).fill('synthetic-edit-only')
   expect(state.acknowledgementPosts).toHaveLength(0); expect(state.posts).toHaveLength(0)
+  await page.getByText('当前配置（只读，不测试 Key）', { exact: true }).click()
   await page.getByRole('button', { name: '手动刷新个人配置', exact: true }).click()
+  await page.getByText('风险确认与 Project 开关', { exact: true }).click()
   await expect(create).toBeEnabled(); await expect(risk).not.toBeChecked()
   expect(state.acknowledgementPosts).toHaveLength(0); expect(state.posts).toHaveLength(0)
 
@@ -211,6 +215,7 @@ test('creates only an explicitly accepted approved 1017 acknowledgement without 
   }
   expect(body).not.toHaveProperty('$defs'); expect(body).not.toHaveProperty('apiKey'); expect(body).not.toHaveProperty('callsApproved')
   await page.getByRole('button', { name: '手动刷新个人配置', exact: true }).click()
+  await page.getByText('风险确认与 Project 开关', { exact: true }).click()
   await expect(create).toBeEnabled(); await expect(risk).not.toBeChecked()
   expect(state.acknowledgementPosts).toHaveLength(1)
   expect(state.posts).toHaveLength(0); expect(state.otherWrites).toHaveLength(0); expect(state.vendorRequests).toBe(0)
@@ -319,6 +324,8 @@ for (const status of [401, 403, 404] as const) {
     await expect(page.getByText(/批次尝试 1；保留费用 USD 0\.000000；\s*已结算费用 USD 0\.000273/)).toBeVisible()
     await expect(page.getByRole('button', { name: '手动恢复批次与现有结果', exact: true })).toBeEnabled()
     await expect(explanation(page)).toBeDisabled(); await expect(summary(page)).toBeDisabled()
+    await page.getByText('当前配置（只读，不测试 Key）', { exact: true }).click()
+    await page.getByText('风险确认与 Project 开关', { exact: true }).click()
     await expect(page.getByText(`凭据版本 ${ids.credential}`, { exact: true })).toBeVisible()
     await expect(page.getByText(`风险确认 ${ids.approval}`, { exact: true })).toBeVisible()
     await expect(page.getByText(`当前批次 ${ids.batch}`, { exact: true })).toBeVisible()

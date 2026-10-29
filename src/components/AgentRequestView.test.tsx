@@ -103,6 +103,42 @@ function rejectedRead(status: number) {
   return new ApiClientError(status, { code: 'opaque', message: 'unsafe provider text', traceId: '', details: {} })
 }
 
+// 正文和引用为独立阅读分区，引用默认可见，运行详情仍位于二者下方。
+it('separates visible verified advice from its citation aside before run details', () => {
+  show(citedRequest())
+  const citations = screen.getByRole('complementary', { name: '引用与依据' })
+  const conclusion = screen.getByText('Review')
+  const reading = conclusion.closest('.result-reading')!
+  const layout = reading.parentElement!
+  expect(reading).toBeVisible()
+  expect(layout).toHaveClass('agent-result-layout')
+  expect(layout).toContainElement(citations)
+  expect(reading).not.toContainElement(citations)
+  expect(citations).toBeVisible()
+  expect(citations).toContainElement(screen.getByText('Evidence 覆盖：部分覆盖'))
+  expect(citations).toContainElement(screen.getByRole('button', { name: /核对文档版本/ }))
+  const details = screen.getByText('运行详情').closest('details')!
+  expect(details).not.toHaveAttribute('open')
+  expect(layout.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+// 结论与引用保持直接可用，工程追溯默认收起且可按需核对。
+it('keeps conclusions and citations visible while run metadata is collapsed', () => {
+  apiMock.mockReset()
+  show(citedRequest())
+  expect(screen.getByText('Review')).toBeVisible()
+  expect(screen.getByRole('button', { name: /核对文档版本/ })).toBeVisible()
+  const details = screen.getByText('运行详情').closest('details')!
+  expect(details).not.toHaveAttribute('open')
+  expect(details).toContainElement(screen.getByText(/Prompt finding-explanation/))
+  expect(screen.getByText(/Prompt finding-explanation/)).not.toBeVisible()
+  expect(details).toContainElement(screen.getByText(/版本 version-1/))
+  fireEvent.click(screen.getByText('运行详情'))
+  expect(details).toHaveAttribute('open')
+  expect(screen.getByText(/trace-1/)).toBeVisible()
+  expect(apiMock).not.toHaveBeenCalled()
+})
+
 // 验证文档与 Evidence 的 401/403/404 以类型化状态上报。
 it.each([401, 403, 404] as const)('forwards typed citation denial %s for document and Evidence reads', async status => {
   for (const source of ['PROJECT_DOCUMENT', 'SCANNER_EVIDENCE'] as const) {

@@ -15,6 +15,25 @@ beforeEach(() => {
   state.save.mockResolvedValue(saved); state.remove.mockResolvedValue(absent)
 })
 
+// 元数据按需展开，安全输入和删除影响仍直接可用；切换详情不会抹去尚未提交的 DOM 输入。
+it('folds credential metadata while keeping owner input and deletion effects directly usable', async () => {
+  state.get.mockResolvedValue(saved); render(<CredentialSettingsPage />)
+  await screen.findByText('已配置（有效性未验证）')
+  const summary = screen.getByText('凭据详情', { selector: 'summary' })
+  expect(summary.closest('details')).not.toHaveAttribute('open')
+  expect(screen.getByText(saved.credentialVersion).closest('details')).toBe(summary.closest('details'))
+  const input = screen.getByLabelText('新的 DeepSeek API Key') as HTMLInputElement
+  expect(input).toBeVisible(); expect(input).toHaveValue('')
+  expect(screen.getByText(/只删除本部署保存的凭据/)).toBeVisible()
+  expect(screen.getByRole('checkbox')).toBeVisible()
+  fireEvent.change(input, { target: { value: synthetic } })
+  fireEvent.click(summary); fireEvent.click(summary)
+  expect(input.value).toBe(synthetic)
+  fireEvent.click(screen.getByRole('button', { name: '加密保存并替换' }))
+  expect(input.value).toBe('')
+  await screen.findByText(/未验证 Key 有效性，也未开启模型调用/)
+})
+
 // 验证加载/未配置状态及保存前立即清空密码输入。
 it('shows loading, empty state and immediate password clearing on save', async () => {
   render(<CredentialSettingsPage />)

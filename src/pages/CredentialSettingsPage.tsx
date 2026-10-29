@@ -86,7 +86,8 @@ function CredentialSettings() {
     <section className="panel stack"><h2>凭据状态</h2>
       {loading ? <p role="status">正在读取状态…</p> : status ? <>
         <p className="badge">{status.configured ? '已配置（有效性未验证）' : '未配置'}</p>
-        {status.configured && <p className="muted">版本 <span className="mono">{status.credentialVersion}</span><br />更新时间 {status.updatedAt}</p>}
+        {status.configured && <details className="compact-metadata"><summary>凭据详情</summary>
+          <p className="muted">版本 <span className="mono">{status.credentialVersion}</span><br />更新时间 {status.updatedAt}</p></details>}
       </> : <p>当前状态未确认，不会自动重试写入。</p>}
       {error && <div className="state error" role="alert">{error.message}{error.traceId && <small className="agent-trace">traceId: {error.traceId}</small>}</div>}
       {notice && <p role="status">{notice}</p>}
@@ -96,7 +97,7 @@ function CredentialSettings() {
       <form className="stack" autoComplete="off" noValidate onSubmit={event => void mutate('write', event)}>
         <label>新的 DeepSeek API Key<input ref={attachInput} type="password" name="deepseek-key" maxLength={256}
           autoComplete="off" spellCheck={false} disabled={busy} aria-describedby="credential-warning" /></label>
-        <p id="credential-warning" className="muted">请先撤销在聊天或日志中暴露的 Key，再输入新 Key。提交后会立即清空输入，保存不会测试账户、查询余额或产生模型费用。</p>
+        <p id="credential-warning" className="muted">提交后立即清空输入。保存不会测试账户、查询余额或产生模型费用。</p>
         <button disabled={busy}>{busy ? '处理中…' : status.configured ? '加密保存并替换' : '加密保存 Key'}</button>
       </form>
       {status.configured && <div className="stack"><h2>删除本地 Key</h2><p className="muted">只删除本部署保存的凭据，不撤销 DeepSeek 账户 Key，不清除历史解释或审计。</p>
@@ -105,6 +106,9 @@ function CredentialSettings() {
         <button className="danger" disabled={busy || !confirmed} onClick={() => void mutate('delete')}>删除本地 Key</button>
       </div>}
     </section>}
-    <p className="muted">真实模型调用仍需独立启用记录与费用授权；此页面不改变扫描、Finding 或 PASS/FAIL。</p>
+    <details className="management-disclosure"><summary>凭据管理帮助</summary>
+      <p className="muted">请先撤销在聊天或日志中暴露的 Key，再输入新 Key。</p>
+      <p className="muted">真实模型调用仍需独立启用记录与费用授权；此页面不改变扫描、Finding 或 PASS/FAIL。</p>
+    </details>
   </main>
 }

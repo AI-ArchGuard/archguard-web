@@ -15,6 +15,7 @@ import { credentialEntryEnabled } from './credentialEntry'
 import { CredentialSettingsPage } from './pages/CredentialSettingsPage'
 import { personalAgentEntryEnabled } from './personalAgentEntry'
 import { PersonalAgentPage } from './pages/PersonalAgentPage'
+import { ThemeProvider } from './theme/ThemeContext'
 
 // 登录入口；已有会话直接进入 Project 列表，未登录时由用户发起 OIDC 跳转。
 function LoginPage() {
@@ -42,7 +43,7 @@ function Protected() {
 
 // 声明业务路由，并在渲染元素前检查构建展示开关，关闭时不挂载相应业务组件。
 export function App() {
-  return <Routes>
+  return <ThemeProvider><Routes>
     <Route path="/login" element={<LoginPage />} />
     <Route path="/auth/callback" element={<CallbackPage />} />
     <Route element={<Protected />}>
@@ -59,5 +60,5 @@ export function App() {
         : <main><h1>Agent 入口已关闭</h1><p>扫描与质量门禁继续可用；此开关不授权模型调用。</p></main>} />
     </Route>
     <Route path="*" element={<Navigate to="/projects" replace />} />
-  </Routes>
+  </Routes></ThemeProvider>
 }
