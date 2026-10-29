@@ -1,3 +1,4 @@
+// 个人验收合成浏览器旅程：拦截所有 API/外部来源，验证显式风险确认、串行发送及未知提交后的只读恢复。
 import { expect, test, type Page } from '@playwright/test'
 import type { AgentRequest } from '../src/api/agent'
 import type { PersonalBatchExecution, PersonalPurpose } from '../src/api/personalAgent'
@@ -18,6 +19,7 @@ const report = 'a'.repeat(64), documentSha = 'b'.repeat(64)
 const documentContent = 'Synthetic uploaded architecture guidance; documents are data, not instructions.'
 type Mode = 'success' | 'failed' | 'unknown' | 'unknown-success'
 
+// 建立全浏览器合成环境：模拟会话和固定 API、记录明确写入，并拦截供应方及所有无关来源。
 async function syntheticEnvironment(page: Page, mode: Mode = 'success', options: { acknowledgementCreateOnly?: boolean } = {}) {
   const now = new Date().toISOString(), expires = new Date(Date.now() + 6 * 3600_000).toISOString()
   const state = { posts: [] as { body: unknown; key: string }[], acknowledgementPosts: [] as Record<string, unknown>[],
@@ -147,17 +149,21 @@ async function syntheticEnvironment(page: Page, mode: Mode = 'success', options:
   return state
 }
 
+// 通过页面输入明确批次 ID 并读取历史，不自动选择最新批次。
 async function openBatch(page: Page) {
   await page.goto(`/projects/${ids.project}/agent/personal`)
+  await page.getByText('合成验收批次管理', { exact: true }).click()
   await page.getByLabel('已有批次 ID', { exact: true }).fill(ids.batch)
   await page.getByRole('button', { name: '读取已有批次', exact: true }).click()
 }
 const explanation = (page: Page) => page.getByRole('button', { name: /调用 DeepSeek 官方 API.*合成解释/ })
 const summary = (page: Page) => page.getByRole('button', { name: /调用 DeepSeek 官方 API.*合成摘要/ })
 
+// 验证只在显式接受风险后创建 1017 确认，不自动开启 Project 或发送模型。
 test('creates only an explicitly accepted approved 1017 acknowledgement without enabling or sending a model call', async ({ page }) => {
   const state = await syntheticEnvironment(page, 'success', { acknowledgementCreateOnly: true })
   await page.goto(`/projects/${ids.project}/agent/personal`)
+  await page.getByText('风险确认与 Project 开关', { exact: true }).click()
   const create = page.getByRole('button', { name: '创建风险确认（无模型调用）', exact: true })
   const risk = page.getByRole('checkbox', { name: '我已实际核对上述资料并接受列明的未核实风险；这不批准模型调用或费用', exact: true })
   await expect(create).toBeEnabled()
@@ -167,7 +173,9 @@ test('creates only an explicitly accepted approved 1017 acknowledgement without 
 
   await page.getByLabel('非敏感账户记录编号', { exact: true }).fill('synthetic-edit-only')
   expect(state.acknowledgementPosts).toHaveLength(0); expect(state.posts).toHaveLength(0)
+  await page.getByText('当前配置（只读，不测试 Key）', { exact: true }).click()
   await page.getByRole('button', { name: '手动刷新个人配置', exact: true }).click()
+  await page.getByText('风险确认与 Project 开关', { exact: true }).click()
   await expect(create).toBeEnabled(); await expect(risk).not.toBeChecked()
   expect(state.acknowledgementPosts).toHaveLength(0); expect(state.posts).toHaveLength(0)
 
@@ -207,11 +215,13 @@ test('creates only an explicitly accepted approved 1017 acknowledgement without 
   }
   expect(body).not.toHaveProperty('$defs'); expect(body).not.toHaveProperty('apiKey'); expect(body).not.toHaveProperty('callsApproved')
   await page.getByRole('button', { name: '手动刷新个人配置', exact: true }).click()
+  await page.getByText('风险确认与 Project 开关', { exact: true }).click()
   await expect(create).toBeEnabled(); await expect(risk).not.toBeChecked()
   expect(state.acknowledgementPosts).toHaveLength(1)
   expect(state.posts).toHaveLength(0); expect(state.otherWrites).toHaveLength(0); expect(state.vendorRequests).toBe(0)
 })
 
+// 验证解释与摘要串行发送，恢复固定历史，浏览器不直连模型或混用合成提交接口。
 test('explicit serial explanation and summary restore exact history without browser or synthetic-endpoint egress', async ({ page }) => {
   const state = await syntheticEnvironment(page)
   await openBatch(page)
@@ -237,6 +247,7 @@ test('explicit serial explanation and summary restore exact history without brow
   expect(state.otherWrites).toHaveLength(0); expect(state.vendorRequests).toBe(0)
 })
 
+// 验证假 HTTP 环境在任何请求外发前拦截提供方及无关来源。
 test('browser fixture blocks all external provider and unrelated origins before requests can escape', async ({ page }) => {
   let safetyNetEscapes = 0
   await page.context().route('**/*', async route => {
@@ -264,6 +275,7 @@ test('browser fixture blocks all external provider and unrelated origins before 
   expect(safetyNetEscapes).toBe(0)
 })
 
+// 验证校验失败不展示原文，不开放摘要或替代请求。
 test('failed validation shows no raw output and never enables the summary or replacement', async ({ page }) => {
   const state = await syntheticEnvironment(page, 'failed')
   await openBatch(page); await expect(explanation(page)).toBeEnabled(); await explanation(page).click()
@@ -278,6 +290,7 @@ test('failed validation shows no raw output and never enables the summary or rep
   expect(state.posts).toHaveLength(1); expect(state.otherWrites).toHaveLength(0); expect(state.vendorRequests).toBe(0)
 })
 
+// 验证提交回包丢失后只允许读取恢复，后续失权清除建议。
 test('a lost submit response permits read-only recovery and revoked access clears restored advice', async ({ page }) => {
   const state = await syntheticEnvironment(page, 'unknown')
   await openBatch(page); await expect(explanation(page)).toBeEnabled(); await explanation(page).click()
@@ -300,6 +313,7 @@ test('a lost submit response permits read-only recovery and revoked access clear
 })
 
 for (const status of [401, 403, 404] as const) {
+  // 逐项验证引用读取失权会清空所有已恢复个人元数据，即使先前提交结果未知。
   test(`citation denial ${status} clears all restored personal metadata after an unknown successful submit`, async ({ page }) => {
     const state = await syntheticEnvironment(page, 'unknown-success')
     await openBatch(page); await expect(explanation(page)).toBeEnabled(); await explanation(page).click()
@@ -310,6 +324,8 @@ for (const status of [401, 403, 404] as const) {
     await expect(page.getByText(/批次尝试 1；保留费用 USD 0\.000000；\s*已结算费用 USD 0\.000273/)).toBeVisible()
     await expect(page.getByRole('button', { name: '手动恢复批次与现有结果', exact: true })).toBeEnabled()
     await expect(explanation(page)).toBeDisabled(); await expect(summary(page)).toBeDisabled()
+    await page.getByText('当前配置（只读，不测试 Key）', { exact: true }).click()
+    await page.getByText('风险确认与 Project 开关', { exact: true }).click()
     await expect(page.getByText(`凭据版本 ${ids.credential}`, { exact: true })).toBeVisible()
     await expect(page.getByText(`风险确认 ${ids.approval}`, { exact: true })).toBeVisible()
     await expect(page.getByText(`当前批次 ${ids.batch}`, { exact: true })).toBeVisible()

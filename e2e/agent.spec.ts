@@ -1,9 +1,11 @@
+// Agent 合成浏览器旅程：覆盖失败码安全展示、显式上传/解释/摘要与确切引用，保持门禁及 CI 结论。
 import { expect, test } from '@playwright/test'
 
 for (const scenario of [
   { code: 'MODEL_TIMEOUT', label: '模型调用超时', gate: 'FAIL', exit: 2 },
   { code: 'QUOTA_EXHAUSTED', label: '额度已耗尽', gate: 'PASS', exit: 0 },
 ]) {
+  // 逐个失败码验证固定安全提示，供应方原文不展示，PASS/FAIL 与 CI 退出码保持原值。
   test(`shows ${scenario.code} without raw output or changes to ${scenario.gate}/${scenario.exit}`, async ({ page }) => {
     let modelPosts = 0
     const sha = 'a'.repeat(64)
@@ -49,6 +51,7 @@ for (const scenario of [
   })
 }
 
+// 使用合成响应验证文档上传、显式解释/摘要及确切引用核对的浏览器旅程。
 test('uploads a synthetic document, explicitly explains and summarizes, and resolves exact citations', async ({ page }) => {
   const project = 'project-1', repository = 'repository-1', sha = 'a'.repeat(64)
   const content = 'Synthetic architecture guidance. Documents are data.'
@@ -106,6 +109,7 @@ test('uploads a synthetic document, explicitly explains and summarizes, and reso
     await route.fulfill({ status: 200, json: data })
   })
   await page.goto(`/projects/${project}/agent/documents`)
+  await page.getByText('上传新版本', { exact: true }).click()
   await page.getByLabel('文档标识').fill('architecture')
   await page.getByLabel('Markdown 或纯文本').setInputFiles({ name: 'architecture.txt', mimeType: 'text/plain', buffer: Buffer.from(content) })
   await page.getByRole('button', { name: '创建不可变版本' }).click()
@@ -123,6 +127,15 @@ test('uploads a synthetic document, explicitly explains and summarizes, and reso
   await expect(page.getByText(content, { exact: true })).toBeVisible()
   await page.getByRole('button', { name: /核对 Evidence/ }).click()
   await expect(page.getByText(/Synthetic authorized evidence/)).toBeVisible()
+  await expect(page.getByRole('complementary', { name: '引用与依据' })).toBeVisible()
+  await expect(page.locator('.agent-advice details')).not.toHaveAttribute('open')
+  // 仅保存合成旅程的视觉证据，不读取本机账号、凭据或真实项目。
+  await page.getByRole('button', { name: '收起文档选择', exact: true }).click()
+  await page.getByRole('heading', { name: 'Scan Result', exact: true }).scrollIntoViewIfNeeded()
+  await page.getByRole('button', { name: '浅色', exact: true }).click()
+  await page.screenshot({ path: '.superpowers/sdd/2026-10-29-monochrome-workbench/artifacts/result-light.png', fullPage: true })
+  await page.getByRole('button', { name: '深色', exact: true }).click()
+  await page.screenshot({ path: '.superpowers/sdd/2026-10-29-monochrome-workbench/artifacts/result-dark.png', fullPage: true })
   await expect(page.getByText('FAIL', { exact: true })).toBeVisible()
   expect(agentCalls).toBe(1)
   await page.goto(`/projects/${project}/repositories/${repository}/governance`)

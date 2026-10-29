@@ -1,3 +1,4 @@
+// 个人 Agent 客户端回归：假 HTTP 覆盖强 ETag、冻结确认契约、固定幂等、费用与引用校验，以及完整超时边界。
 import {
   acknowledgePersonalRisk, approvePersonalBatch, getPersonalBatch, getPersonalBatchExecution, getPersonalEnablement,
   getPersonalRequest, getPersonalRole, getPersonalSettings, PersonalAgentClientError, previewPersonalBatch,
@@ -58,9 +59,11 @@ const riskInput = (): PersonalAcknowledgementInput => ({ schemaVersion: '0.4.0',
 const batchInput = (): PersonalBatchInput => ({ enablementId: acknowledgement, syntheticInventoryId: credential,
   templateRequestIds: [explanation, summary], manifestSha256: 'a'.repeat(64), expiresAt: expiry,
   maxRequests: 2, maxCostMicrousd: 700000, callsApproved: true })
+// 统一生成带 JSON 媒体类型的假 HTTP 响应；各场景可单独覆盖状态或头部。
 function response(value: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json', ...headers } })
 }
+// 替换 fetch 并返回 spy，使测试可核对路径、发送次数、正文和头部。
 function mock(value: unknown, status = 200, headers: Record<string, string> = {}) {
   const fetcher = vi.fn().mockImplementation(() => Promise.resolve(response(value, status, headers)))
   vi.stubGlobal('fetch', fetcher); return fetcher
@@ -69,6 +72,7 @@ function mock(value: unknown, status = 200, headers: Record<string, string> = {}
 beforeEach(() => { auth.getUser.mockResolvedValue({ expired: false, access_token: 'synthetic-test-token', profile: { sub: owner } }) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
 
+// 验证超出 JS 整数精度的强 ETag 原样保留，只使用固定同源设置接口。
 it('preserves the original strong ETag beyond JS integer precision and uses only fixed same-origin controls', async () => {
   const raw = JSON.stringify(settings).replace('"revision":12', '"revision":9007199254740993')
   const fetcher = vi.fn().mockImplementation((_path: string, init: RequestInit) => Promise.resolve(new Response(init.method === 'PUT'
@@ -87,11 +91,13 @@ it('preserves the original strong ETag beyond JS integer precision and uses only
   expect(new Headers(init.headers).get('Authorization')).toBe('Bearer synthetic-test-token')
 })
 
+// 逐项拒绝弱 ETag、非规范数值、超范围、与正文不符或缺失的设置版本。
 it.each(['W/"12"', '"01"', '"9223372036854775808"', '"13"', '"12", "13"', ''])('rejects invalid, stale-body or missing settings ETags %s', async etag => {
   mock(settings, 200, { ETag: etag })
   await expect(getPersonalSettings(project, signal())).rejects.toBeInstanceOf(PersonalAgentClientError)
 })
 
+// 验证每项管理操作独立，不触发 live 路由也不保存输入。
 it('exposes every management operation without triggering the live endpoint or persisting input', async () => {
   const local = vi.spyOn(window.localStorage, 'setItem'), session = vi.spyOn(window.sessionStorage, 'setItem')
   const fetcher = vi.fn().mockImplementation((path: string, init: RequestInit) => {
@@ -115,6 +121,7 @@ it('exposes every management operation without triggering the live endpoint or p
   expect(local).not.toHaveBeenCalled(); expect(session).not.toHaveBeenCalled()
 })
 
+// 验证终态回包或人工重复调用后，batch/template 幂等键始终不变。
 it('keeps one deterministic batch/template key even after terminal replies or manual repeated invocation', async () => {
   const fetcher = mock(agentRequest(), 202)
   await runPersonalRequest(project, batchId, explanation, signal()); await runPersonalRequest(project, batchId, explanation, signal())
@@ -127,6 +134,7 @@ it('keeps one deterministic batch/template key even after terminal replies or ma
   expect(fetcher).toHaveBeenCalledTimes(2)
 })
 
+// 验证错误正文不解析，只展示经过筛选的头部 trace，不重试。
 it('never parses untrusted error bodies, exposes only safe header trace and performs no retry', async () => {
   const secret = 'synthetic-private-error-only'
   const reply = response({ message: secret, apiKey: secret }, 503, { 'X-Request-Id': 'd'.repeat(32) })
@@ -143,6 +151,7 @@ it('never parses untrusted error bodies, exposes only safe header trace and perf
   expect(new PersonalAgentClientError(500, secret).traceId).toBe('')
 })
 
+// 验证路径注入在 fetch 前拒绝。
 it.each(['https://api.deepseek.com', '../projects', `${project}/../${owner}`, '1-1-1-1-1'])('rejects path injection before fetching: %s', async id => {
   const fetcher = mock(batch)
   await expect(getPersonalBatch(id, batchId, signal())).rejects.toBeInstanceOf(PersonalAgentClientError)
@@ -150,6 +159,7 @@ it.each(['https://api.deepseek.com', '../projects', `${project}/../${owner}`, '1
   expect(fetcher).not.toHaveBeenCalled()
 })
 
+// 逐项拒绝不可信元数据或范围/契约不一致的回包。
 it.each([
   { ...enablement, projectId: owner }, { ...enablement, priceCatalogVersion: 'deepseek-flash-peak-usd-2026-10-06' },
   { ...enablement, apiKey: 'synthetic-forbidden-success-field' }, { ...enablement, revoked: true, revokedAt: null },
@@ -158,6 +168,7 @@ it.each([
   await expect(getPersonalEnablement(project, acknowledgement, signal())).rejects.toBeInstanceOf(PersonalAgentClientError)
 })
 
+// 验证 UTF-8 正文大小、媒体类型及状态限制，网络错误不泄露细节。
 it('bounds UTF-8 metadata, validates media/status and rejects network error detail', async () => {
   const fetcher = mock({ ...batch, extra: '中'.repeat(11000) })
   await expect(getPersonalBatch(project, batchId, signal())).rejects.toBeInstanceOf(PersonalAgentClientError)
@@ -170,6 +181,7 @@ it('bounds UTF-8 metadata, validates media/status and rejects network error deta
   expect(fetcher).toHaveBeenCalledTimes(4)
 })
 
+// 验证批准的 1017 确认只通过固定同源边界显式发送。
 it('accepts the explicitly approved 1017 acknowledgement through the fixed same-origin client boundary', async () => {
   const fetcher = mock(enablement, 201), input = riskInput()
   await expect(acknowledgePersonalRisk(project, input, signal())).resolves.toEqual(enablement)
@@ -185,6 +197,7 @@ it('accepts the explicitly approved 1017 acknowledgement through the fixed same-
   expect(body).not.toHaveProperty('$defs'); expect(body).not.toHaveProperty('apiKey'); expect(body).not.toHaveProperty('callsApproved')
 })
 
+// 逐项拒绝不符合冻结确认契约的出站字段或映射。
 it.each([
   ['old 0.3.0 mapping', { schemaVersion: '0.3.0', mappingSnapshot: 'deepseek-v4.1-flash-2026-10-15' }],
   ['old 0.2.0 mapping and price', { schemaVersion: '0.2.0', mappingSnapshot: 'deepseek-v4.1-flash-2026-10-06', priceCatalogVersion: 'deepseek-flash-peak-usd-2026-10-06' }],
@@ -209,12 +222,14 @@ it.each([
   expect(fetcher).not.toHaveBeenCalled()
 })
 
+// 验证批次输入有额外字段时在网络前拒绝。
 it('rejects unexpected outbound batch fields before network', async () => {
   const fetcher = mock(enablement, 201)
   await expect(approvePersonalBatch(project, { ...batchInput(), apiKey: 'synthetic-forbidden' } as PersonalBatchInput, signal())).rejects.toBeInstanceOf(PersonalAgentClientError)
   expect(fetcher).not.toHaveBeenCalled()
 })
 
+// 验证无 attempt、待结算、已知零费用及未知预留是不同事实。
 it('does not confuse absent attempt, pending settlement, known zero and unknown retained reservation', async () => {
   const request = { id: requestId, state: 'RUNNING', failureCode: null, traceId: 'a'.repeat(32), createdAt: stamp, updatedAt: stamp }
   const attempt = { attemptId: credential, utcDay: '2026-10-16', priceCatalogVersion: policy, reservedMicrousd: 316373, createdAt: stamp, outcome: null }
@@ -232,6 +247,7 @@ it('does not confuse absent attempt, pending settlement, known zero and unknown 
   }
 })
 
+// 验证输入 Token 超限失败保留固定槽位、停止原因和已知费用。
 it('recovers a failed input-token-limit slot and stop while retaining its known charge', async () => {
   const fresh = execution()
   const value = { ...fresh, accounting: { attemptCount: 1, reservedMicrousd: 0, spentMicrousd: 2521 },
@@ -251,11 +267,13 @@ it('recovers a failed input-token-limit slot and stop while retaining its known 
   expect(fetcher.mock.calls[0][1].method).toBe('GET')
 })
 
+// 验证执行视图的 Token 超限代码不扩展普通 AgentRequest 失败契约。
 it('keeps the generic AgentRequest failure contract narrow even when execution has a token-limit code', async () => {
   mock({ ...agentRequest(), state: 'FAILED', failure: { code: 'INPUT_TOKEN_LIMIT', message: 'Synthetic unsupported generic code.' } })
   await expect(getPersonalRequest(project, requestId, signal())).rejects.toBeInstanceOf(PersonalAgentClientError)
 })
 
+// 逐项拒绝槽位、费用或异步状态不一致的执行快照。
 it.each([
   () => ({ ...execution(), batch: { ...batch, projectId: owner } }),
   () => ({ ...execution(), accounting: { attemptCount: 0, reservedMicrousd: 1, spentMicrousd: 0 } }),
@@ -267,6 +285,7 @@ it.each([
   await expect(getPersonalBatchExecution(project, batchId, signal())).rejects.toBeInstanceOf(PersonalAgentClientError)
 })
 
+// 验证读取请求身份/Project，合成模板读取不混入 live 发送。
 it('validates request ID/Project and keeps the synthetic template route distinct from live submission', async () => {
   const fetcher = mock(agentRequest())
   expect((await getPersonalRequest(project, requestId, signal())).id).toBe(requestId)
@@ -282,6 +301,7 @@ it('validates request ID/Project and keeps the synthetic template route distinct
   await expect(runPersonalRequest(project, batchId, explanation, signal())).rejects.toBeInstanceOf(PersonalAgentClientError)
 })
 
+// 验证成功请求只接受绑定 Evidence 与不可变文档摘要的引用。
 it('accepts a successful request only with its bound Evidence and immutable document citations', async () => {
   const fetcher = mock(successfulRequest())
   const value = await getPersonalRequest(project, requestId, signal())
@@ -296,6 +316,7 @@ it('accepts a successful request only with its bound Evidence and immutable docu
   expect(fetcher.mock.calls[0][1].method).toBe('GET')
 })
 
+// 逐项拒绝不可信结果、引用或绑定字段。
 it.each([
   ['Project', 0, 'projectId', owner],
   ['scan', 0, 'scanJobId', owner],
@@ -309,6 +330,7 @@ it.each([
   await expect(getPersonalRequest(project, requestId, signal())).rejects.toBeInstanceOf(PersonalAgentClientError)
 })
 
+// 验证成员角色有界分页且使用可取消专用路径。
 it('reads role with bounded pagination and never invokes the old uncancellable role helper', async () => {
   const members = Array.from({ length: 100 }, (_, index) => ({ actorId: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
     role: 'VIEWER', createdAt: stamp }))
@@ -320,6 +342,7 @@ it('reads role with bounded pagination and never invokes the old uncancellable r
   expect(fetcher.mock.calls[0][1].signal).toBe(fetcher.mock.calls[1][1].signal)
 })
 
+// 验证预先取消或认证等待超时均不启动 fetch。
 it('aborts before network and cancels a stalled authentication wait without starting fetch', async () => {
   const fetcher = mock(batch)
   const controller = new AbortController(); controller.abort()
@@ -333,6 +356,7 @@ it('aborts before network and cancels a stalled authentication wait without star
   expect(fetcher).not.toHaveBeenCalled()
 })
 
+// 验证模拟传输忽略 abort 时，原始十五秒期限仍结束等待。
 it('cancels a stalled fetch at the original fifteen-second deadline even when the fake transport ignores abort', async () => {
   vi.useFakeTimers()
   const fetcher = vi.fn().mockImplementation(() => new Promise(() => {})); vi.stubGlobal('fetch', fetcher)
@@ -347,6 +371,7 @@ it('cancels a stalled fetch at the original fifteen-second deadline even when th
   expect(fetcher).toHaveBeenCalledTimes(1)
 })
 
+// 验证 JSON 流中途停滞会取消，不返回或展示部分元数据。
 it('cancels a response stream stalled mid-JSON and does not return or display partial metadata', async () => {
   let started!: () => void
   const reading = new Promise<void>(resolve => { started = resolve }), cancel = vi.fn()

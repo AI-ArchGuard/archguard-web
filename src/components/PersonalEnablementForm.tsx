@@ -1,3 +1,4 @@
+// 个人风险确认表单：固定协议、映射与数据范围，要求操作者填写实际核对记录并手动接受风险。
 import { useState, type FormEvent } from 'react'
 import type { PersonalAcknowledgementInput } from '../api/personalAgent'
 
@@ -10,10 +11,12 @@ const sources = [
 const reference = /^(?!sk-)[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 const utc = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/
 
+// 收集非敏感索引、来源版本和实际核对时间；不预勾风险，也不生成核对记录。
 export function PersonalEnablementForm({ busy, credentialVersion, onSubmit, onDirty }: {
   busy: boolean; credentialVersion: string | null | undefined; onSubmit: (input: PersonalAcknowledgementInput) => Promise<void>; onDirty: () => void
 }) {
   const [error, setError] = useState('')
+  // 验证显式勾选及当前凭据版本后构造冻结契约输入；提交结束后取消风险勾选，需再次明确确认。
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (busy || !credentialVersion) return
     const form = event.currentTarget; const data = new FormData(form)

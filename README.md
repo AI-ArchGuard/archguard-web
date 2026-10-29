@@ -2,9 +2,19 @@
 
 ArchGuard 治理平台的独立 React 客户端。提供 OIDC Authorization Code + PKCE 登录，以及 Project、Repository、RuleSet、ScanJob、Finding、Evidence 和处置页面。阶段 3F 增加只读持续治理页面：从 Repository 的“持续治理”进入，选择目标分支与 RuleSetVersion，查看 GitHub PR 当前提交门禁、不可变基线、NEW/EXISTING/RESOLVED、趋势及跨扫描例外到期状态。
 
+## 黑白工作台
+
+工作区使用可折叠侧栏，并支持浅色、深色和跟随系统。主题只在浏览器 `archguard.theme` 保存显示偏好，与身份和模型设置无关；存储不可用时仍可使用。手机导航默认关闭，打开后隔离背景，Escape 返回原按钮。
+
+项目、仓库和文档先显示列表；创建与上传按需展开，折叠不会丢失尚未提交的普通输入。Agent 先显示建议正文和可核验引用，宽容器将引用放在右侧，Prompt、版本和 traceId 收进“运行详情”。个人验收页优先显示当前运行状态，风险确认和批次管理分别展开；收费、未知和撤销影响仍在相关操作旁显示。
+
+本次只改变展示，不增加日常真实调用接口，不改变默认关闭、授权、请求幂等、费用控制、凭据生命周期或历史记录。UI 检查不代替真实模型验收；阶段四保持开放。回滚可独立回退 Web；需要停止真实调用时仍须先按既有部署流程关闭入口与后端出口。
+
 阶段 3H 增加独立的 PR 修订差异展示：它比较上一个已验证的不同 PR head 与当前 head，并清楚标注“相对上一 PR 修订”；原门禁与 Finding 分类仍标注“相对基线”。缺少可信前驱或报告时显示不可用原因，不把未知误当作零。此只读展示不改变 CI 退出码或 Scanner 契约。
 
 ## 安全边界
+
+学习代码可从[Web 中文阅读指南](docs/code-reading/web.zh-CN.md)进入，按路由、身份、客户端、Hook、展示和测试阅读。手写源码补中文说明，生成类型、固定契约和数据保持原样。
 
 阶段 4F 提供 Project 文档管理、单个 Finding 的按需解释和 Maintainer 显式选择 Finding 的 PR 摘要。请求绑定确切扫描/报告、已验证 PR 修订和不可变文档版本；页面显示异步状态、失败原因、证据覆盖、版本及 traceId。Evidence 和文档引用按当前 Project 权限重新读取，摘要和解释始终作为需人工复核的建议。
 
@@ -51,6 +61,10 @@ Platform #50 已合并为 `710025d`，main CI 成功后本 Web 消费固定 [API
 部署仍待受控主密钥/目录挂载、owner/origin 配置；本 UI 不代表真实 Agent 已接通或阶段完成。兼容顺序 Docs → Platform producer → Web → Deploy；回滚关闭凭据 UI/管理/模型后退应用，保留主密钥、密文和历史。现有 Agent Output/Scanner Schema 不变，#43/4H/阶段 4 继续跟踪。
 
 安全补丁仅将已存在的间接依赖 source-map-js 锁定版本从 1.2.1 更新至 1.2.2（BSD-3-Clause），修复[官方发布列出的拒绝服务漏洞](https://github.com/7rulnik/source-map-js/releases/tag/v1.2.2)。未增加依赖或批量升级；保持旧版本无法通过当前 high 门槛，降低扫描门槛不是备选。
+
+工具链补丁按官方公告固定 [Vite 8.3.3](https://github.com/advisories/GHSA-587h-7wmj-h5pm) 与 [Vitest 5.0.3](https://github.com/advisories/GHSA-xp26-3454-mjgp)，并将已有间接依赖更新至 [undici 8.12.2](https://github.com/advisories/GHSA-2m5v-pch6-74hx)、[zod 4.6.6](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) 的同系列最小修复版本（均为 MIT）。不新增直接依赖，继续使用 `npm ci` 和原 `npm audit --audit-level=high` 门槛；业务、固定 API 契约及模型调用权限不变。
+
+Docker构建阶段固定官方`node:24.22.2-alpine3.23`，满足锁定依赖最低Node24.15要求，并包含[Node24.22.1安全修复](https://nodejs.org/en/blog/release/v24.22.1)及后续补丁；[官方镜像源](https://github.com/nodejs/docker-node/blob/e994dfe115899a82684caa7533380aa7d439aae1/24/alpine3.23/Dockerfile)仍为原Alpine3.23系列。生产仍使用既有nginx镜像；主机Node测试不能替代Docker构建与容器冒烟证据，具体执行状态见[验证计划](docs/superpowers/plans/2026-10-29-web-container-node.md)。
 
 ## 3H 兼容顺序
 

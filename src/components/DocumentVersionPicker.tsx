@@ -1,9 +1,11 @@
+// 可选文档依据选择器：分别分页读取文档与不可变版本，最多加入十个版本 ID，提交方保存选择。
 import { useState } from 'react'
 import { api, ApiClientError } from '../api/client'
 import type { DocumentPage, DocumentVersionPage } from '../api/agent'
 import { Loading } from './States'
 import { useApi } from '../hooks/useApi'
 
+// 分别读取文档页与版本页；切换上级选择清空下级选择，去重后把明确版本交给父组件。
 export function DocumentVersionPicker({ projectId, selected, onChange }: {
   projectId: string; selected: string[]; onChange: (ids: string[]) => void
 }) {

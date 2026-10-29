@@ -1,3 +1,4 @@
+// 凭据页生命周期回归：模拟配置/写入错误，检查密码清空、人工删除确认、取消和重复点击。
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { CredentialSettingsPage } from './CredentialSettingsPage'
 import { CredentialClientError } from '../api/credentials'
@@ -14,6 +15,26 @@ beforeEach(() => {
   state.save.mockResolvedValue(saved); state.remove.mockResolvedValue(absent)
 })
 
+// 元数据按需展开，安全输入和删除影响仍直接可用；切换详情不会抹去尚未提交的 DOM 输入。
+it('folds credential metadata while keeping owner input and deletion effects directly usable', async () => {
+  state.get.mockResolvedValue(saved); render(<CredentialSettingsPage />)
+  await screen.findByText('已配置（有效性未验证）')
+  const summary = screen.getByText('凭据详情', { selector: 'summary' })
+  expect(summary.closest('details')).not.toHaveAttribute('open')
+  expect(screen.getByText(saved.credentialVersion).closest('details')).toBe(summary.closest('details'))
+  const input = screen.getByLabelText('新的 DeepSeek API Key') as HTMLInputElement
+  expect(input).toBeVisible(); expect(input).toHaveValue('')
+  expect(screen.getByText(/只删除本部署保存的凭据/)).toBeVisible()
+  expect(screen.getByRole('checkbox')).toBeVisible()
+  fireEvent.change(input, { target: { value: synthetic } })
+  fireEvent.click(summary); fireEvent.click(summary)
+  expect(input.value).toBe(synthetic)
+  fireEvent.click(screen.getByRole('button', { name: '加密保存并替换' }))
+  expect(input.value).toBe('')
+  await screen.findByText(/未验证 Key 有效性，也未开启模型调用/)
+})
+
+// 验证加载/未配置状态及保存前立即清空密码输入。
 it('shows loading, empty state and immediate password clearing on save', async () => {
   render(<CredentialSettingsPage />)
   expect(screen.getByText('正在读取状态…')).toBeInTheDocument()
@@ -29,6 +50,7 @@ it('shows loading, empty state and immediate password clearing on save', async (
   expect(screen.getByText(/未验证 Key 有效性，也未开启模型调用/)).toBeInTheDocument()
 })
 
+// 验证保存失败清空输入并隐藏未知状态，只允许人工刷新。
 it('clears failed input, hides unknown state and never retries until manual refresh', async () => {
   state.save.mockRejectedValue(new CredentialClientError(503))
   render(<CredentialSettingsPage />); await screen.findByText('未配置')
@@ -41,6 +63,7 @@ it('clears failed input, hides unknown state and never retries until manual refr
   expect(screen.getByLabelText('新的 DeepSeek API Key')).toHaveValue('')
 })
 
+// 验证本地删除必须明确确认，且不表示供应商 Key 已撤销。
 it('requires explicit confirmation and does not represent local deletion as provider revocation', async () => {
   state.get.mockResolvedValue(saved); render(<CredentialSettingsPage />)
   await screen.findByText('已配置（有效性未验证）')
@@ -51,6 +74,7 @@ it('requires explicit confirmation and does not represent local deletion as prov
   expect(screen.getByText(/如需撤销，请到 DeepSeek 控制台操作/)).toBeInTheDocument()
 })
 
+// 验证无权限或管理不可用时不显示密码输入。
 it.each([403, 503])('shows permission/unavailable state without a secret input (%s)', async status => {
   state.get.mockRejectedValue(new CredentialClientError(status))
   render(<CredentialSettingsPage />); await screen.findByRole('alert')
@@ -58,6 +82,7 @@ it.each([403, 503])('shows permission/unavailable state without a secret input (
   expect(state.save).not.toHaveBeenCalled(); expect(state.remove).not.toHaveBeenCalled()
 })
 
+// 验证离页、pagehide 和身份切换会清空已脱离 DOM 的输入。
 it('clears detached input on leaving, pagehide and identity changes', async () => {
   const view = render(<CredentialSettingsPage />); await screen.findByText('未配置')
   let input = screen.getByLabelText('新的 DeepSeek API Key') as HTMLInputElement
@@ -68,6 +93,7 @@ it('clears detached input on leaving, pagehide and identity changes', async () =
   fireEvent.change(input, { target: { value: synthetic } }); view.unmount(); expect(input.value).toBe('')
 })
 
+// 验证非法输入先清空且不发请求，同步锁抑制重复点击。
 it('invalid input is cleared before any request and duplicate clicks are suppressed', async () => {
   let finish: (value: typeof saved) => void = () => undefined
   state.save.mockImplementation(() => new Promise(resolve => { finish = resolve }))

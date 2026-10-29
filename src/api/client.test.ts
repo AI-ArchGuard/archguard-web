@@ -1,8 +1,10 @@
+// 普通 API 上传回归：检查 FormData 的媒体类型边界由浏览器生成。
 import { api } from './client'
 
 vi.mock('../auth/oidc', () => ({ userManager: { getUser: () => Promise.resolve({ expired: false, access_token: 'test-token' }) } }))
 afterEach(() => vi.unstubAllGlobals())
 
+// 验证上传 FormData 时不手写 Content-Type，让浏览器补齐 multipart boundary。
 it('lets the browser set the multipart boundary for document uploads', async () => {
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: () => Promise.resolve({ id: 'version-1' }) })
   vi.stubGlobal('fetch', fetchMock)

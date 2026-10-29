@@ -1,3 +1,4 @@
+// 个人验收协调页：分开读取风险确认、Project 设置、凭据元数据和批次，区分管理、费用批准与显式真实发送。
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
@@ -12,6 +13,7 @@ import { PersonalLivePanel } from '../components/PersonalLivePanel'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
+// 先检查展示开关、身份与 Project ID，再按 Project/身份挂载独立协调状态。
 export function PersonalAgentPage() {
   const { projectId = '' } = useParams(); const { user } = useAuth()
   if (!personalAgentEntryEnabled()) return <main><h1>个人真实验收入口已关闭</h1><p>扫描与质量门禁继续可用。</p></main>
@@ -19,6 +21,7 @@ export function PersonalAgentPage() {
   return <PersonalAgent key={`${projectId}:${user.profile.sub}`} projectId={projectId} actorId={user.profile.sub} />
 }
 
+// 管理当前范围的元数据及写操作；代次、取消信号与同步锁共同阻止迟到响应和重复提交。
 function PersonalAgent({ projectId, actorId }: { projectId: string; actorId: string }) {
   const [settings, setSettings] = useState<PersonalSettingsSnapshot>()
   const [credential, setCredential] = useState<CredentialStatus>()
@@ -30,6 +33,7 @@ function PersonalAgent({ projectId, actorId }: { projectId: string; actorId: str
   const [error, setError] = useState<PersonalAgentClientError>(), [notice, setNotice] = useState('')
   const [permissionLost, setPermissionLost] = useState(false)
   const [reload, setReload] = useState(0)
+  // 代次在切换/离页时递增；取消只是浏览器等待结束，不能撤销已到达后台的写入。
   const generation = useRef(0), pending = useRef<AbortController | null>(null), mutating = useRef(false)
 
   const clearMetadata = useCallback(() => {
@@ -69,7 +73,9 @@ function PersonalAgent({ projectId, actorId }: { projectId: string; actorId: str
     return () => window.removeEventListener('pagehide', hide)
   }, [clearMetadata, cancelPending])
 
+  // 既要 Project Maintainer，也要能通过部署所有者凭据元数据边界；后端授权始终权威。
   const canManage = !!settings && role === 'MAINTAINER' && !!credential
+  // 顺序执行一个管理操作；写入失败或权限丢失时撤下旧元数据，保留固定错误且不自动补写。
   async function perform<T>(operation: (signal: AbortSignal) => Promise<T>, accept: (value: T) => void, write = false) {
     if (mutating.current) return
     mutating.current = true; setBusy(true); setError(undefined); setNotice('')
@@ -85,11 +91,14 @@ function PersonalAgent({ projectId, actorId }: { projectId: string; actorId: str
       setError(safe)
     } finally { if (generation.current === current) { mutating.current = false; setBusy(false) } }
   }
+  // 人工重新读取配置前清空元数据与提示，避免把旧权限/批准状态作为当前事实。
   function refresh() {
     if (mutating.current) return
     clearMetadata(); setLoading(true); setError(undefined); setNotice(''); setPermissionLost(false); setReload(value => value + 1)
   }
+  // 风险确认变化后清除已选择批次，要求重新核对对应的费用批准。
   function changedApproval(value: PersonalEnablement) { setApproval(value); setApprovalId(value.id); setBatch(undefined) }
+  // 发送资格需设置、凭据版本与当前确认一致；批次及有效期由下层在点击时再次核对。
   const effective = !!settings?.value.enabled && settings.value.modelCallsAvailable && !!credential?.configured
     && !!approval && !approval.revoked && approval.id === settings.value.enablementId
     && approval.credentialVersion === credential.credentialVersion
@@ -98,12 +107,18 @@ function PersonalAgent({ projectId, actorId }: { projectId: string; actorId: str
   return <main className="stack"><div className="page-head"><div><p className="eyebrow">个人本机 · 合成数据限定</p>
     <h1>个人合成真实验收</h1><p className="muted">使用 DeepSeek 官方托管 API，无需部署模型。风险确认、费用批准与实际发送是三项独立操作。</p></div>
     <Link to={`/projects/${projectId}`}>返回 Project</Link></div>
-    <section className="panel stack"><h2>固定边界</h2>
-      <p>每次最多 USD 0.35，总授权 USD 0.70；每次保守预留 USD 0.316373。仅解释、摘要各一次，失败即停，不重试或补发。</p>
-      <p className="muted">完整请求最多 6,000 字节，输出最多 1,500 Token；输入 8,000 是调用后验收阈值，不是发送前保证。本地费用控制不是厂商账户强制限费。</p>
-      <p className="muted">仅使用批准的合成证据与文档，不发送源码、客户资料或 Key。模型建议不改变 Finding、PASS/FAIL 或 CI。</p>
+    <section className="agent-status-row" aria-label="个人运行状态">
+      {loading ? <p role="status">正在核对运行条件…</p> : <p>{batch ? '已选择批次；发送条件由当前授权与批次逐次核对。' : '当前未选择批次；请在批次管理中读取明确的已有批次。'}</p>}
+      <p>每次最多 USD 0.35，总授权 USD 0.70；失败或费用未知即停，不补发。</p>
+      {permissionLost && <p className="state error" role="alert">Project 权限已失效，历史结果已清除；请重新核对权限。</p>}
+      {error && <div className="state error"><p role="alert">{error.message}</p>{error.traceId &&
+        <details className="management-disclosure compact-metadata"><summary>运行详情</summary><small className="agent-trace">traceId: {error.traceId}</small></details>}</div>}
+      {notice && <p role="status">{notice}</p>}
     </section>
-    <section className="panel stack"><h2>当前配置（只读，不测试 Key）</h2>
+    {settings && batch && <PersonalLivePanel key={batch.id} projectId={projectId} batch={batch}
+      canSend={canManage && effective && batch.enablementId === approval?.id}
+      authorizationExpiresAt={approval?.expiresAt} priceExpiresAt={approval?.priceCatalogExpiresAt} onDenied={handleDenied} />}
+    <details className="panel management-disclosure"><summary>当前配置（只读，不测试 Key）</summary>
       {loading ? <p role="status">正在读取个人配置…</p> : settings ? <>
         <p>Project 模型入口：{settings.value.enabled ? '开启' : '关闭'}；后台调用条件：{settings.value.modelCallsAvailable ? '本地配置可用，发送时仍须逐次检查' : '不可用或已关闭'}</p>
         <p>Key：{credential ? credential.configured ? '已加密配置，有效性未验证' : '未配置' : '状态不可读；不具备所有者写权限或管理不可用'}</p>
@@ -112,11 +127,13 @@ function PersonalAgent({ projectId, actorId }: { projectId: string; actorId: str
         {!canManage && <p className="muted">当前仅可读取。写操作同时需要部署所有者与本 Project Maintainer。</p>}
       </> : <p>配置状态未确认；请手动刷新，不会自动重试写入。</p>}
       <button className="quiet" disabled={busy} onClick={refresh}>手动刷新个人配置</button>
-      {permissionLost && <p className="state error" role="alert">Project 权限已失效，历史结果已清除；请重新核对权限。</p>}
-      {error && <p className="state error" role="alert">{error.message}{error.traceId && <small className="agent-trace">traceId: {error.traceId}</small>}</p>}
-      {notice && <p role="status">{notice}</p>}
-    </section>
-    {settings && <section className="panel stack"><h2>风险确认与 Project 开关</h2>
+      <section className="stack"><h2>固定边界</h2>
+        <p>每次最多 USD 0.35，总授权 USD 0.70；每次保守预留 USD 0.316373。仅解释、摘要各一次，失败即停，不重试或补发。</p>
+        <p className="muted">完整请求最多 6,000 字节，输出最多 1,500 Token；输入 8,000 是调用后验收阈值，不是发送前保证。本地费用控制不是厂商账户强制限费。</p>
+        <p className="muted">仅使用批准的合成证据与文档，不发送源码、客户资料或 Key。模型建议不改变 Finding、PASS/FAIL 或 CI。</p>
+      </section>
+    </details>
+    {settings && <details className="panel management-disclosure"><summary>风险确认与 Project 开关</summary>
       <label>启用确认 ID<input value={approvalId} maxLength={36} disabled={busy} onChange={event => {
         setApprovalId(event.target.value); setApproval(undefined); setBatch(undefined)
       }} /></label>
@@ -147,12 +164,9 @@ function PersonalAgent({ projectId, actorId }: { projectId: string; actorId: str
               changedApproval(value); setNotice('风险确认已保存；Project 未自动开启，未批准费用，也未调用模型。')
             }, true)} />
       </>}
-    </section>}
-    {settings && <PersonalBatchPanel key={`${settings.etag}:${approval?.id ?? ''}`} projectId={projectId} enablement={approval}
-      canManage={canManage} disabled={busy} onBatch={setBatch} onDenied={handleDenied} />}
-    {settings && batch && <PersonalLivePanel key={batch.id} projectId={projectId} batch={batch}
-      canSend={canManage && effective && batch.enablementId === approval?.id}
-      authorizationExpiresAt={approval?.expiresAt} priceExpiresAt={approval?.priceCatalogExpiresAt} onDenied={handleDenied} />}
+    </details>}
+    {settings && <details className="panel management-disclosure"><summary>合成验收批次管理</summary><PersonalBatchPanel key={`${settings.etag}:${approval?.id ?? ''}`} projectId={projectId} enablement={approval}
+      canManage={canManage} disabled={busy} onBatch={setBatch} onDenied={handleDenied} /></details>}
     <p className="muted">关闭或撤销不能撤回在途调用，不退款或恢复次数；退出、Project 或账号切换会取消浏览器等待，但不是后台撤销。</p>
   </main>
 }

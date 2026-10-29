@@ -1,3 +1,4 @@
+// PR 合成摘要入口：先核对 Maintainer 和当前 head/门禁/成功扫描，再由用户选择 Finding 并显式提交。
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { ownRole } from '../api/projectRole'
@@ -10,6 +11,7 @@ import { AgentRequestView } from './AgentRequestView'
 import { DocumentVersionPicker } from './DocumentVersionPicker'
 import { Failure, Loading } from './States'
 
+// 页面仅向 Maintainer 提供摘要控件，先验证当前 PR/head 对应扫描；后端仍按每次请求重新授权。
 export function PrSummary({ projectId, repositoryId, pr, gate }: {
   projectId: string; repositoryId: string; pr: PullRequest; gate?: GateEvaluation
 }) {
@@ -17,12 +19,14 @@ export function PrSummary({ projectId, repositoryId, pr, gate }: {
   const actorId = user?.profile.sub ?? ''
   const role = useApi(() => actorId ? ownRole(projectId, actorId) : Promise.resolve(null), `role:${projectId}:${actorId}`)
   const [findingPage, setFindingPage] = useState(0)
+  // 只以当前 PR 修订关联的门禁定位扫描，历史 PASS 或另一分支的结果不能冒充当前输入。
   const trusted = pr.projectId === projectId && pr.repositoryId === repositoryId && !!pr.currentHeadRevisionId
     && !!gate?.candidateJobId && gate.id === pr.currentGateEvaluationId && gate.projectId === projectId
     && gate.repositoryId === repositoryId && gate.targetBranch === pr.targetBranch
   const input = useApi(async () => {
     if (!trusted || role.data !== 'MAINTAINER') return undefined
     const root = `/api/v1/projects/${projectId}/scan-jobs/${gate!.candidateJobId}`
+    // 并行读取扫描和所选页后核对范围，防止错误路由数据被用于摘要输入。
     const [job, findings] = await Promise.all([api<ScanJob>(root), api<Finding[]>(`${root}/findings?page=${findingPage}&size=100`)])
     if (job.id !== gate!.candidateJobId || job.projectId !== projectId || job.repositoryId !== repositoryId
         || job.status !== 'SUCCEEDED' || !job.reportSha256

@@ -1,7 +1,9 @@
+// 风险表单回归：不伪造核对记录、不默认同意风险，只发送冻结映射与操作者明确填写的资料。
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { PersonalEnablementForm } from './PersonalEnablementForm'
 
 const credential = '40000000-0000-4000-8000-000000000001'
+// 模拟操作者逐项填写非敏感引用、版本和核对时间；风险勾选由各场景另行操作。
 function validFields() {
   for (const label of ['非敏感账户记录编号', '非敏感部署记录编号', 'Secret 托管实际检查编号', '受限网络出口实际检查编号']) {
     fireEvent.change(screen.getByLabelText(label), { target: { value: 'synthetic-review-20261016' } })
@@ -15,6 +17,7 @@ function validFields() {
   }
 }
 
+// 验证没有预设核对时间或风险同意，缺失实际记录时拒绝提交。
 it('never fabricates checked times or pre-accepts risk and rejects an incomplete acknowledgement', async () => {
   const submit = vi.fn(); render(<PersonalEnablementForm busy={false} credentialVersion={credential} onSubmit={submit} onDirty={() => {}} />)
   expect(screen.getByRole('checkbox')).not.toBeChecked()
@@ -24,6 +27,7 @@ it('never fabricates checked times or pre-accepts risk and rejects an incomplete
   expect(screen.getByRole('link', { name: '打开官方模型与价格（手动核对）' })).toHaveAttribute('href', 'https://api-docs.deepseek.com/quick_start/pricing/')
 })
 
+// 验证手动接受风险后只提交冻结策略与操作者填写的核对记录。
 it('requires explicit acceptance and sends only the frozen context policy plus actual operator records', async () => {
   const submit = vi.fn().mockResolvedValue(undefined)
   render(<PersonalEnablementForm busy={false} credentialVersion={credential} onSubmit={submit} onDirty={() => {}} />)
@@ -48,6 +52,7 @@ it('requires explicit acceptance and sends only the frozen context policy plus a
   await waitFor(() => expect(screen.getByRole('checkbox')).not.toBeChecked())
 })
 
+// 验证 Key 形状引用或缺失当前凭据版本均不能提交。
 it('does not accept a key-shaped reference or allow submission without current credential metadata', async () => {
   const submit = vi.fn(); const view = render(<PersonalEnablementForm busy={false} credentialVersion={credential} onSubmit={submit} onDirty={() => {}} />)
   validFields(); fireEvent.change(screen.getByLabelText('Secret 托管实际检查编号'), { target: { value: 'sk-synthetic-forbidden-index' } })

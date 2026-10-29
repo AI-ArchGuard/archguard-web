@@ -1,3 +1,4 @@
+// 项目文档管理页：按角色显示上传入口，读取不可变文档版本；上传经本地文本检查后使用幂等键提交。
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
@@ -7,6 +8,7 @@ import { ownRole } from '../api/projectRole'
 import { Empty, Failure, Loading } from '../components/States'
 import { useApi } from '../hooks/useApi'
 
+// 将上传失败状态映射为固定可读原因，避免直接呈现接口错误原文。
 function uploadMessage(error: unknown) {
   if (error instanceof ApiClientError) {
     if (error.status === 403 || error.status === 404) return '没有上传权限，或 Project 已不可访问。'
@@ -17,6 +19,7 @@ function uploadMessage(error: unknown) {
   return '上传失败，请稍后重试。'
 }
 
+// 文档与版本分别分页，角色定时复核；只有 Maintainer 显示上传控件。
 export function AgentDocumentsPage() {
   const { projectId = '' } = useParams()
   const { user } = useAuth()
@@ -42,6 +45,7 @@ export function AgentDocumentsPage() {
     return () => window.clearInterval(timer)
   }, [role.reload])
 
+  // 为点击递增读取代次，忽略旧点击的迟到结果，并确认版本确属当前 Project 与文档。
   async function showVersion(versionId: string) {
     const read = ++versionRead.current
     setVersion(undefined); setVersionError('')
@@ -55,6 +59,7 @@ export function AgentDocumentsPage() {
     } catch { if (read === versionRead.current) setVersionError('无权读取该文档版本，或版本已不可用。') }
   }
 
+  // 检查扩展名、大小和 UTF-8 后提交；相同 File 对象与文档键在失败重试时复用幂等键，成功后清除。
   async function upload(event: FormEvent) {
     event.preventDefault(); setUploadError(''); setUploadSuccess('')
     if (!file || role.data !== 'MAINTAINER') return
@@ -88,13 +93,6 @@ export function AgentDocumentsPage() {
   if (role.error) return <main><Failure error={role.error} retry={role.reload} /></main>
   if (documents.error) return <main><Failure error={documents.error} retry={documents.reload} /></main>
   return <main className="agent-documents-page"><div className="page-head"><div><p className="eyebrow">Project 文档</p><h1>不可变架构文档</h1></div><Link to={`/projects/${projectId}`}>返回 Project</Link></div>
-    <p className="muted">仅 Maintainer 可以显式上传 Markdown 或纯文本。每次上传创建新版本；文档中的指令只是数据，不会自动触发模型。</p>
-    {role.data === 'MAINTAINER' &&
-      <section className="panel"><h2>上传新版本</h2><form className="stack" onSubmit={(event) => void upload(event)}>
-        <label>文档标识<input required pattern="[a-z][a-z0-9-]{2,62}" value={documentKey} onChange={(event) => setDocumentKey(event.target.value)} /></label>
-        <label>Markdown 或纯文本<input required type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={(event) => setFile(event.target.files?.[0])} /></label>
-        <button disabled={uploading}>{uploading ? '上传中…' : '创建不可变版本'}</button>
-      </form>{uploadError && <p role="alert">{uploadError}</p>}{uploadSuccess && <p role="status">{uploadSuccess}</p>}</section>}
     <section><h2>已上传文档</h2>{!documents.data?.items.length
         ? <Empty>尚无显式上传的项目文档。</Empty> : <div className="list">{documents.data.items.map((item) =>
           <button className="row selectable" key={item.id} onClick={() => { versionRead.current++; setDocumentId(item.id); setVersionPage(0); setVersion(undefined); setVersionError('') }}>
@@ -112,5 +110,16 @@ export function AgentDocumentsPage() {
       {versionError && <div className="state error" role="alert">{versionError}</div>}
       {version && <article className="panel"><h3>{version.documentKey} · 版本 {version.versionNumber}</h3>
         <small className="mono">{version.contentSha256}</small><pre className="document-content">{version.content}</pre></article>}</section>}
+    {role.data === 'MAINTAINER' && <>
+      <details className="management-disclosure"><summary>上传新版本</summary>
+        <p className="muted">仅支持不超过 256 KiB 的 Markdown 或纯文本。每次上传创建新版本，不会自动触发模型。</p>
+        <form className="stack" onSubmit={(event) => void upload(event)}>
+          <label>文档标识<input required pattern="[a-z][a-z0-9-]{2,62}" value={documentKey} onChange={(event) => setDocumentKey(event.target.value)} /></label>
+          <label>Markdown 或纯文本<input required type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={(event) => setFile(event.target.files?.[0])} /></label>
+          <button disabled={uploading}>{uploading ? '上传中…' : '创建不可变版本'}</button>
+        </form>
+      </details>
+      {uploadError && <p role="alert">{uploadError}</p>}{uploadSuccess && <p role="status">{uploadSuccess}</p>}
+    </>}
   </main>
 }

@@ -1,3 +1,4 @@
+// Finding 解释交互回归：挂载与展开文档均不发送建议，显式点击才提交明确扫描绑定。
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { FindingExplanation } from './FindingExplanation'
@@ -9,6 +10,7 @@ vi.mock('../hooks/useApi', () => ({ useApi: () => ({ data: { items: [] }, loadin
 const job = { id: 'job-1', projectId: 'project-1', status: 'SUCCEEDED', reportSha256: 'a'.repeat(64) }
 const finding = { id: 'finding-1', projectId: 'project-1', jobId: 'job-1', ruleId: 'dependency' }
 
+// 验证页面渲染不请求建议，只在用户明确点击解释时提交绑定输入。
 it('never calls the model API until the user explicitly requests an explanation', async () => {
   apiMock.mockReset().mockResolvedValue({ id: 'request-1', state: 'FAILED', failure: { code: 'MODEL_DISABLED' },
     purpose: 'FINDING_EXPLANATION', projectId: 'project-1', traceId: 'trace-1', bindings: {
