@@ -64,6 +64,8 @@ Platform #50 已合并为 `710025d`，main CI 成功后本 Web 消费固定 [API
 
 工具链补丁按官方公告固定 [Vite 8.3.3](https://github.com/advisories/GHSA-587h-7wmj-h5pm) 与 [Vitest 5.0.3](https://github.com/advisories/GHSA-xp26-3454-mjgp)，并将已有间接依赖更新至 [undici 8.12.2](https://github.com/advisories/GHSA-2m5v-pch6-74hx)、[zod 4.6.6](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) 的同系列最小修复版本（均为 MIT）。不新增直接依赖，继续使用 `npm ci` 和原 `npm audit --audit-level=high` 门槛；业务、固定 API 契约及模型调用权限不变。
 
+Docker构建阶段固定官方`node:24.22.2-alpine3.23`，满足锁定依赖最低Node24.15要求，并包含[Node24.22.1安全修复](https://nodejs.org/en/blog/release/v24.22.1)及后续补丁；[官方镜像源](https://github.com/nodejs/docker-node/blob/e994dfe115899a82684caa7533380aa7d439aae1/24/alpine3.23/Dockerfile)仍为原Alpine3.23系列。生产仍使用既有nginx镜像；主机Node测试不能替代Docker构建与容器冒烟证据，具体执行状态见[验证计划](docs/superpowers/plans/2026-10-29-web-container-node.md)。
+
 ## 3H 兼容顺序
 
 先发布 Platform 3F 只读接口，再发布使用固定快照生成类型的 Web。回滚时先回滚 Web，再回滚 Platform；新页面不写入治理数据，不修改 Scanner Schema，也不改变 3E CI 提交流程。
